@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { HookExit, HookOutput, HookPreview, HookRunStarted } from '@shared/domain/hooks'
@@ -112,7 +112,8 @@ describe('hooks:run (ADR-008)', () => {
     await touch(path.join(r, '.hid.jpg'))
     await touch(path.join(r, 'sub', 'keep.jpg'))
     const { started, exit } = await runHook('deleteR', { dir: r, root: path.join(env.base, 'in') })
-    expect(started.skipped).toBe(true)
+    expect(started).toMatchObject({ skipped: true, builtIn: true })
+    expect(exit.trashed).toBe(2)
     expect(exit).toMatchObject({ code: 0, error: null })
     expect(env.trashed.map((p) => path.basename(p)).sort()).toEqual(['.hid.jpg', 'a.jpg'])
     expect(existsSync(path.join(r, 'sub', 'keep.jpg'))).toBe(true)
@@ -127,7 +128,7 @@ describe('hooks:run (ADR-008)', () => {
     const r = path.join(env.base, 'in', 'R')
     const a = await touch(path.join(r, 'a.jpg'))
     await configure('deleteR', { command: NODE, args: [await writeDump(), '{files}'], env: { HOOK_PATHS: '{dir}' } })
-    const { started, exit } = await runHook('deleteR', { dir: r })
+    const { started, exit } = await runHook('deleteR', { dir: r, root: path.join(env.base, 'in') })
     expect(started.skipped).toBe(false)
     expect(exit.code).toBe(0)
     expect(stdoutOf()).toContain(JSON.stringify(a).slice(1, -1))
@@ -136,9 +137,12 @@ describe('hooks:run (ADR-008)', () => {
   it('deleteR reports files that could not be trashed and never hard-deletes', async () => {
     env = await createEnv()
     const r = path.join(env.base, 'in', 'R')
-    await mkdir(r, { recursive: true })
-    const { exit } = await runHook('deleteR', { dir: r, files: [path.join(r, 'ghost.jpg')] })
+    await touch(path.join(r, 'stuck.jpg'))
+    env.ctx.trashItem = () => Promise.reject(new Error('locked'))
+    const { exit } = await runHook('deleteR', { dir: r, root: path.join(env.base, 'in') })
     expect(exit.code).toBe(1)
+    expect(exit.trashed).toBe(0)
+    expect(existsSync(path.join(r, 'stuck.jpg'))).toBe(true)
     expect(exit.error).toMatchObject({ code: 'PROCESS_FAILED' })
   })
 })

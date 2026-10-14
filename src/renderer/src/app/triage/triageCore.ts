@@ -188,6 +188,13 @@ export function popDecision(state: TriageCoreState): Decision | null {
   return state.decisions.pop() ?? null
 }
 
+/** Removes the decision that owns journal entry `entryId`, wherever it sits in the stack. */
+export function popDecisionByEntry(state: TriageCoreState, entryId: string): Decision | null {
+  const at = state.decisions.findLastIndex((d) => d.entryId === entryId)
+  if (at < 0) return null
+  return state.decisions.splice(at, 1)[0] ?? null
+}
+
 /**
  * Puts the item of an undone decision back: status `pending`, path = `restoredPath` (the file
  * may have been renamed on collision), cursor on it. A `personal` copy changes nothing but the

@@ -3,7 +3,7 @@
  * ffmpeg runs (lavfi fixtures) for cut, concat, crop, scale, transpose, copy-then-cut and the
  * nvenc -> libx264 fallback. Without ffmpeg the real runs skip.
  */
-import { mkdir, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { VideoJob } from '@shared/domain/job'
@@ -185,8 +185,8 @@ describe('success rule (checklist 14, 21)', () => {
 })
 
 describe('temp copy and parts', () => {
-  it('deletes a stale <video>.copy.mp4 before the copy step and the copy after the re-encode (checklist 20)', async () => {
-    const stale = path.join(dir, 'v.mp4.copy.mp4')
+  it('deletes a stale <video>.copy.part.mp4 before the copy step and the copy after the re-encode (checklist 20)', async () => {
+    const stale = path.join(dir, 'v.mp4.copy.part.mp4')
     await writeFile(stale, 'stale')
     const seen: (number | null)[] = []
     const { executor } = fake(async (call, argv) => {
@@ -218,7 +218,7 @@ describe('temp copy and parts', () => {
       })
     )
     expect(concatSeen).toEqual([[]])
-    expect(trashed).toEqual([`${input}.0.mp4`, `${input}.1.mp4`])
+    expect(trashed).toEqual([`${input}.0.part.mp4`, `${input}.1.part.mp4`])
     expect(result).toMatchObject({ ok: true, outputs: [`${input}.mp4`] })
   })
 
@@ -250,6 +250,67 @@ describe('temp copy and parts', () => {
     )
     expect(result.ok).toBe(false)
     expect(trashed).toEqual([])
+  })
+})
+
+describe('outputs are never overwritten (review H5)', () => {
+  const input = (): string => path.join(dir, 'v.mp4')
+
+  it('ffmpeg writes *.part.mp4 and the final name appears only after success', async () => {
+    const written: string[] = []
+    const { executor } = fake(async (_c, argv) => {
+      written.push(path.basename(argv[argv.length - 2] ?? ''))
+      expect(await files()).not.toContain('v.mp4.0.mp4')
+      return { exit: 0 }
+    })
+    const result = await runFfmpegJob(request({ executor }))
+    expect(written).toEqual(['v.mp4.0.part.mp4'])
+    expect(result).toMatchObject({ ok: true, outputs: [`${input()}.0.mp4`] })
+    expect(await files()).toEqual(['v.mp4.0.mp4'])
+  })
+
+  it('an existing output goes through trashExisting before the new file takes its name', async () => {
+    await writeFile(`${input()}.0.mp4`, 'OLD')
+    const trashed: string[] = []
+    const { executor } = fake(() => ({ exit: 0 }))
+    const result = await runFfmpegJob(
+      request({
+        executor,
+        trashExisting: async (p) => {
+          trashed.push(p)
+          await rm(p)
+        }
+      })
+    )
+    expect(trashed).toEqual([`${input()}.0.mp4`])
+    expect(result).toMatchObject({ ok: true, outputs: [`${input()}.0.mp4`] })
+    expect(await fileSize(`${input()}.0.mp4`)).toBe(5000)
+  })
+
+  it('without trashExisting the existing output stays and the new one gets a collision name', async () => {
+    await writeFile(`${input()}.0.mp4`, 'OLD')
+    const { executor } = fake(() => ({ exit: 0 }))
+    const result = await runFfmpegJob(request({ executor }))
+    expect(result).toMatchObject({ ok: true, outputs: [path.join(dir, 'v.mp4.0 (1).mp4')] })
+    expect(await readFile(`${input()}.0.mp4`, 'utf8')).toBe('OLD')
+  })
+
+  it('a failed run removes only its own part files, never an earlier output', async () => {
+    await writeFile(`${input()}.0.mp4`, 'OLD')
+    const { executor } = fake(() => ({ exit: 1, bytes: 5000 }))
+    const result = await runFfmpegJob(request({ executor, encoders: ['libx264'], gpu: false }))
+    expect(result.ok).toBe(false)
+    expect(await files()).toEqual(['v.mp4.0.mp4'])
+    expect(await readFile(`${input()}.0.mp4`, 'utf8')).toBe('OLD')
+  })
+
+  it('keepParts promotes the cut parts to their final names after the concat', async () => {
+    const { executor } = fake(() => ({ exit: 0 }))
+    const result = await runFfmpegJob(
+      request({ executor, keepParts: true, job: job({ posExecution: 2, times: [[0, 1000], [2000, 3000]] }) })
+    )
+    expect(result).toMatchObject({ ok: true, outputs: [`${input()}.mp4`] })
+    expect(await files()).toEqual(['v.mp4.0.mp4', 'v.mp4.1.mp4', 'v.mp4.mp4'])
   })
 })
 

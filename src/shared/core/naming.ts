@@ -51,21 +51,41 @@ export function prefixedName(name: string, prefix: string): string {
   return prefix.length > 0 ? `${prefix}_${name}` : name
 }
 
+export interface LimitOptions {
+  /** Characters to keep free after the name (e.g. 5 for the sidecar suffix `.json`). Default 0. */
+  readonly reserve?: number
+  /** Also bound the UTF-8 byte length to 255 (Linux/macOS file systems count bytes). Default false. */
+  readonly byteLimit?: boolean
+}
+
+function utf8Length(text: string): number {
+  let bytes = 0
+  for (const point of text) {
+    const code = point.codePointAt(0) ?? 0
+    bytes += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4
+  }
+  return bytes
+}
+
 /**
- * Applies the 254 (whole path) and 255 (name) bounds by dropping characters from the START.
+ * Applies the 254 (whole path) and 255 (name) bounds by dropping characters from the START,
+ * whole code points at a time (a surrogate pair is never cut in half). `reserve` keeps room for
+ * a sidecar suffix; `byteLimit` adds the 255-byte rule of POSIX file systems.
  * `destDir` is the destination folder (`<root>/<folder>`). Returns `null` when no usable name
  * is left (the extension plus at least one character would not fit): the caller refuses the move.
  */
-export function limitName(name: string, destDir: string): string | null {
-  const sepLength = 1
-  let result = name
-  if (destDir.length + sepLength + result.length > MAX_DEST_PATH_LENGTH) {
-    const keep = MAX_DEST_PATH_LENGTH - destDir.length - sepLength
-    if (keep <= splitExt(result).ext.length) return null
-    result = result.slice(result.length - keep)
-  }
-  if (result.length > MAX_NAME_LENGTH) result = result.slice(result.length - MAX_NAME_LENGTH)
-  return result
+export function limitName(name: string, destDir: string, options: LimitOptions = {}): string | null {
+  const reserve = options.reserve ?? 0
+  const fits = (candidate: string): boolean =>
+    destDir.length + 1 + candidate.length + reserve <= MAX_DEST_PATH_LENGTH &&
+    candidate.length + reserve <= MAX_NAME_LENGTH &&
+    (options.byteLimit !== true || utf8Length(candidate) + reserve <= MAX_NAME_LENGTH)
+  if (fits(name)) return name
+  const points = Array.from(name)
+  let start = 1
+  while (start < points.length && !fits(points.slice(start).join(''))) start += 1
+  const result = points.slice(start).join('')
+  return result.length <= splitExt(name).ext.length || !fits(result) ? null : result
 }
 
 /** `clip.mp4` + 2 gives `clip (2).mp4`; `n = 0` returns the name unchanged. */
@@ -88,6 +108,8 @@ export interface DestinationNameOptions {
   readonly exists: (candidatePath: string) => boolean
   /** Safety valve for the ` (n)` loop. Default 10000. */
   readonly maxAttempts?: number
+  /** Name-length options (sidecar reserve, POSIX byte limit); see `limitName`. */
+  readonly limits?: LimitOptions
 }
 
 export interface DestinationName {
@@ -124,7 +146,7 @@ export function resolveDestination(options: DestinationNameOptions): Destination
   }
   const maxAttempts = options.maxAttempts ?? 10000
   for (let n = 0; n <= maxAttempts; n += 1) {
-    const limited = limitName(collisionName(wanted, n), dir)
+    const limited = limitName(collisionName(wanted, n), dir, options.limits)
     if (limited === null) return { ok: false, error: 'NAME_TOO_LONG' }
     const path = `${dir}${sep}${limited}`
     if (!exists(path)) return { ok: true, value: { name: limited, dir, path, collisions: n } }

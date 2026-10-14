@@ -11,11 +11,26 @@ export interface GroupOptions {
   readonly caseInsensitivePaths?: boolean
 }
 
-/** Comparison key of a path: `\` -> `/`, repeated and trailing separators dropped, optional lower case. */
+const WINDOWS_PATH = /^(?:[A-Za-z]:|\\\\)/
+
+/**
+ * Comparison key of a path: `\` -> `/`, repeated and trailing separators dropped. Lower-cased when
+ * the caller asks for it OR the path looks like a Windows path (`C:\...`, `\\server\...`), whose
+ * file system ignores case.
+ */
 export function pathKey(path: string, caseInsensitive = false): string {
   const unified = path.replace(/\\/g, '/').replace(/\/{2,}/g, '/')
   const trimmed = unified.length > 1 ? unified.replace(/\/+$/, '') : unified
-  return caseInsensitive ? trimmed.toLowerCase() : trimmed
+  return caseInsensitive || WINDOWS_PATH.test(path) ? trimmed.toLowerCase() : trimmed
+}
+
+/** Python `format(x, '.0f')`: ties round half to even. */
+export function roundHalfEven(value: number): number {
+  const floor = Math.floor(value)
+  const diff = value - floor
+  if (diff < 0.5) return floor
+  if (diff > 0.5) return floor + 1
+  return floor % 2 === 0 ? floor : floor + 1
 }
 
 interface Bucket {

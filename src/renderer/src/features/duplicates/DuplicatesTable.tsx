@@ -5,7 +5,8 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import type { RefObject } from 'react'
 import type { HashKind } from '@shared/domain/hash'
 import { InfoCell, INFO_WIDTH, PictureCell } from './MemberCells'
-import { pathIdentity, type FactsMap, type TableRow } from './grouping'
+import { pathKey } from '@shared/core/duplicates'
+import type { FactsMap, TableRow } from './grouping'
 
 export interface DuplicatesTableProps {
   rows: readonly TableRow[]
@@ -27,7 +28,7 @@ export default function DuplicatesTable(props: DuplicatesTableProps) {
     // jsdom has no layout: give the virtualizer a viewport so tests render rows.
     initialRect: { width: 1200, height: 800 }
   })
-  const chosen = new Set(selected.map(pathIdentity))
+  const chosen = new Set(selected.map((p) => pathKey(p)))
   return (
     <Box ref={scrollRef} data-testid="dup-scroll" sx={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
       {rows.length === 0 && (
@@ -46,7 +47,7 @@ export default function DuplicatesTable(props: DuplicatesTableProps) {
               style={{ transform: `translateY(${item.start}px)` }}
             >
               {row.members.map((member) => {
-                const isSel = chosen.has(pathIdentity(member.path))
+                const isSel = chosen.has(pathKey(member.path))
                 return (
                   <Box
                     key={member.path}

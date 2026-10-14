@@ -2,9 +2,9 @@
 import type { JournalEntry, SidecarMove, UndoResult } from '@shared/domain/fileops'
 import { appError } from '../../ipc/errors'
 import type { MainContext, SessionRecord } from '../../ipc/context'
-import { moveEntry, pathExists, uniqueName } from './fsutil'
+import { isInside, moveEntry, pathExists, uniqueName } from './fsutil'
 import type { JournalStore } from './journal'
-import { sidecarOf } from './operations'
+import { assertInside, sidecarOf } from './operations'
 import path from 'node:path'
 
 async function findTarget(
@@ -57,6 +57,10 @@ async function undoCopy(
   if (entry.to === null || !pathExists(entry.to)) {
     throw appError('NOT_FOUND', `The copy is no longer at ${entry.to ?? '(unknown)'}`, { path: entry.to })
   }
+  const personal = ctx.settings.get().folders.personal
+  if (personal === null || !isInside(personal, entry.to)) {
+    throw appError('PATH_NOT_ALLOWED', 'The copy is not inside the personal folder', { path: entry.to })
+  }
   await ctx.trashItem(entry.to)
   return { restored: entry.from, sidecars: [] }
 }
@@ -69,6 +73,9 @@ export async function undoEntry(
   itemFor: (path: string) => Promise<UndoResult['item']>
 ): Promise<UndoResult> {
   const entry = await findTarget(journal, session.root, entryId)
+  // The journal is a file in the user's folder: never act outside the session / personal folder.
+  await assertInside(session, entry.from)
+  if (entry.op !== 'copy' && entry.to !== null) await assertInside(session, entry.to)
   const outcome = entry.op === 'copy' ? await undoCopy(ctx, entry) : await undoMove(entry)
   const compensating = await journal.record(
     session.root,

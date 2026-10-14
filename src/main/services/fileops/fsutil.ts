@@ -6,7 +6,7 @@ import { lstatSync } from 'node:fs'
 import { constants } from 'node:fs'
 import { copyFile, cp, mkdir, rename, rm, unlink } from 'node:fs/promises'
 import path from 'node:path'
-import { collisionName, limitName } from '@shared/core/naming'
+import { collisionName, limitName, type LimitOptions } from '@shared/core/naming'
 import { appError } from '../../ipc/errors'
 
 /** Windows rejects paths over 260 characters unless they carry the `\\?\` prefix. */
@@ -67,10 +67,11 @@ async function copyAcrossDevices(from: string, to: string): Promise<void> {
 export function uniqueName(
   dir: string,
   name: string,
-  isTaken: (candidate: string) => boolean = pathExists
+  isTaken: (candidate: string) => boolean = pathExists,
+  limits?: LimitOptions
 ): { name: string; path: string } {
   for (let n = 0; n <= 10000; n += 1) {
-    const limited = limitName(collisionName(name, n), dir)
+    const limited = limitName(collisionName(name, n), dir, limits)
     if (limited === null) throw appError('IO', `File name too long for ${dir}: ${name}`)
     const candidate = path.join(dir, limited)
     if (!isTaken(candidate)) return { name: limited, path: candidate }

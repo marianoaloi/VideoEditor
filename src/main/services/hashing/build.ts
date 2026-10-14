@@ -43,7 +43,10 @@ export interface BuildOutcome {
 
 export async function md5OfFile(file: string, signal?: AbortSignal): Promise<string> {
   const hash = createHash('md5')
-  const stream = createReadStream(file, { ...(signal === undefined ? {} : { signal }) })
+  const stream = createReadStream(file, {
+    highWaterMark: 1 << 20,
+    ...(signal === undefined ? {} : { signal })
+  })
   for await (const chunk of stream) hash.update(chunk as Buffer)
   return hash.digest('hex')
 }
@@ -160,10 +163,12 @@ export async function buildHashCsv(o: BuildOptions): Promise<BuildOutcome> {
     await rename(tmp, csvPath)
     tmp = null
     await writeMeta(csvPath, root, o.provider.id)
+    await o.provider.dispose?.()
     emit({ phase: 'done', done: counts.done, total: files.length, failed: counts.failed }, true)
     return { csvPath, fileCount: files.length, rowCount: counts.rows, failedCount: counts.failed, cancelled: false }
   } catch (error) {
     if (tmp !== null) await rm(tmp, { force: true })
+    await o.provider.dispose?.()
     if (o.signal?.aborted !== true && !isAbort(error)) throw error
     emit({ phase: 'done', done: counts.done, total: 0, failed: counts.failed }, true)
     return { csvPath, fileCount: counts.done, rowCount: counts.rows, failedCount: counts.failed, cancelled: true }
@@ -183,23 +188,36 @@ async function hashAll(
   counts: Counts,
   emit: Emit
 ): Promise<void> {
-  const size = Math.max(1, o.concurrency ?? 2)
-  for (let i = 0; i < files.length; i += size) {
-    o.signal?.throwIfAborted()
-    const batch = files.slice(i, i + size)
-    const results = await Promise.all(batch.map((f) => hashOne(f, o)))
-    for (const [n, result] of results.entries()) {
-      await handle.write(result.rows.map(csvRowLine).join(''))
-      counts.rows += result.rows.length
+  const lanes = Math.max(1, o.concurrency ?? 2)
+  const results = new Map<number, FileResult>()
+  let nextToStart = 0
+  let nextToWrite = 0
+  let flushing: Promise<void> = Promise.resolve()
+  const flush = async (): Promise<void> => {
+    for (let r = results.get(nextToWrite); r !== undefined; r = results.get(nextToWrite)) {
+      results.delete(nextToWrite)
+      await handle.write(r.rows.map(csvRowLine).join(''))
+      counts.rows += r.rows.length
       counts.done += 1
-      if (result.failed) counts.failed += 1
+      if (r.failed) counts.failed += 1
       emit({
         phase: 'hashing',
         done: counts.done,
         total: files.length,
         failed: counts.failed,
-        currentPath: (batch[n] as WalkedFile).path
+        currentPath: (files[nextToWrite] as WalkedFile).path
       })
+      nextToWrite += 1
     }
   }
+  const lane = async (): Promise<void> => {
+    while (nextToStart < files.length) {
+      o.signal?.throwIfAborted()
+      const index = nextToStart++
+      results.set(index, await hashOne(files[index] as WalkedFile, o))
+      flushing = flushing.then(flush)
+      await flushing
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(lanes, files.length) }, lane))
 }

@@ -12,7 +12,7 @@ import type { EventChannel, EventPayload } from '@shared/ipc/contract'
 import type { Settings } from '@shared/domain/settings'
 import type { SessionItem, SessionKindFilter, SessionSort } from '@shared/domain/session'
 import { AppError } from './errors'
-import type { MediaAllowlist } from './mediaAllowlist'
+import { createMediaAllowlist, type MediaAllowlist } from './mediaAllowlist'
 
 // ---- settings -------------------------------------------------------------------------------
 
@@ -123,6 +123,11 @@ export interface MainContext {
   sendEvent<C extends EventChannel>(channel: C, payload: EventPayload<C>): void
   settings: SettingsAccess
   allowlist: MediaAllowlist
+  /**
+   * Roots/files the USER approved natively (dialog result, drop). The only way a renderer-named
+   * folder can start a session or be probed/hashed (`pathGuard.resolveGuardedPath`).
+   */
+  approvals: MediaAllowlist
   services: ServiceLocator
   /** `app.getPath('userData')` and `os.tmpdir()`-style temp dir for this app. */
   paths: { readonly userData: string; readonly temp: string }
@@ -136,6 +141,7 @@ export interface MainContextDeps {
   getWindow: () => BrowserWindow | null
   settings: SettingsAccess
   allowlist: MediaAllowlist
+  approvals?: MediaAllowlist
   paths: { userData: string; temp: string }
   trashItem: (absPath: string) => Promise<void>
   newId: () => string
@@ -151,6 +157,7 @@ export function createMainContext(deps: MainContextDeps): MainContext {
     },
     settings: deps.settings,
     allowlist: deps.allowlist,
+    approvals: deps.approvals ?? createMediaAllowlist(),
     services: createServiceLocator(),
     paths: deps.paths,
     trashItem: deps.trashItem,

@@ -12,6 +12,7 @@ import { useKeymap } from '../../app/keymap/useKeymap'
 import { useNotify } from '../../app/notifications/notify'
 import { currentItem } from '../../app/triage/triageCore'
 import CropDialog from '../../components/CropDialog/CropDialog'
+import ConfirmDialog from '../settings/ConfirmDialog'
 import ZoomViewer from '../../components/ZoomViewer/ZoomViewer'
 import ControlsBar from './ControlsBar'
 import ImageTile from './ImageTile'
@@ -27,7 +28,14 @@ import {
   uncropCurrent
 } from './imageTriageThunks'
 import { imageTriageThunks, selectImageTriage, settingsSeeded, timerChanged } from './imageTriageSlice'
-import { ANIMATED_STATUS_COLOR, historyItems, isAnimatedFormat, mainStripItems, statusParts } from './logic'
+import {
+  ANIMATED_STATUS_COLOR,
+  historyItems,
+  isAnimatedFormat,
+  mainStripItems,
+  sendConfirmMessage,
+  statusParts
+} from './logic'
 
 interface Overlay {
   kind: 'crop' | 'zoom'
@@ -76,6 +84,7 @@ export default function ImageTriageScreen() {
   const visible = useAppSelector((st) => st.settings.value?.imageTriage.visibleCount ?? 5)
   const personal = useAppSelector((st) => st.settings.value?.folders.personal ?? null)
   const [overlay, setOverlay] = useState<Overlay | null>(null)
+  const [confirmSend, setConfirmSend] = useState(false)
   useSeedFromSettings()
   useTimer()
 
@@ -112,7 +121,7 @@ export default function ImageTriageScreen() {
     { id: 'imageTriage.uncrop', keys: ['Ctrl+F'], description: 'Restore the original from bkp/', run: () => void dispatch(uncropCurrent()) },
     { id: 'imageTriage.openFolder', keys: ['F6'], description: 'Open the folder of this image', run: openCurrentFolder },
     { id: 'imageTriage.copyPersonal', keys: ['P'], description: 'Copy to the personal folder', run: copyPersonal },
-    { id: 'imageTriage.send', keys: ['L'], description: 'Send: clean L, trash R, upload L', run: () => void dispatch(sendImages()) },
+    { id: 'imageTriage.send', keys: ['L'], description: 'Send: clean L, trash R, upload L', enabled: s.sessionId !== null && !confirmSend, run: () => setConfirmSend(true) },
     { id: 'imageTriage.toggleTimer', keys: ['S'], description: 'Start or stop the auto-advance timer', run: () => dispatch(timerChanged({ running: !s.timer.running })) },
     { id: 'imageTriage.zoom', keys: ['Z'], description: 'Zoom the current image', run: () => openOverlay('zoom') }
   ]
@@ -156,6 +165,17 @@ export default function ImageTriageScreen() {
         <History title={s.leftName} items={left} />
         <History title={s.rightName} items={right} />
       </Box>
+      <ConfirmDialog
+        open={confirmSend}
+        title="Send"
+        message={sendConfirmMessage(s.items.filter((i) => i.status === 'right').length, s.root, s.rightName, s.leftName)}
+        confirmLabel="Send"
+        onConfirm={() => {
+          setConfirmSend(false)
+          void dispatch(sendImages())
+        }}
+        onCancel={() => setConfirmSend(false)}
+      />
       {overlay?.kind === 'crop' && (
         <CropDialog
           open

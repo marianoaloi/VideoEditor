@@ -163,6 +163,7 @@ async function runLadder(
       handle.log(line, { quiet: source === 'stderr' && options.ignoreErrors })
     },
     trashPart: (path) => deps.trash(path, payload.root),
+    trashExisting: (path) => deps.trash(path, payload.root),
     ...(deps.stepExecutor === undefined ? {} : { executor: deps.stepExecutor(ffmpegPath) })
   })
   if (result.ok) return { kind: 'done', outputs: result.outputs }

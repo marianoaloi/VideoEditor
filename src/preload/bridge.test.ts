@@ -5,6 +5,7 @@ type Listener = (event: unknown, payload: unknown) => void
 const { ipcRenderer, webUtils } = vi.hoisted(() => ({
   ipcRenderer: {
     invoke: vi.fn(),
+    send: vi.fn(),
     on: vi.fn(),
     removeListener: vi.fn()
   },
@@ -16,6 +17,7 @@ import { createBridge } from './bridge'
 
 beforeEach(() => {
   ipcRenderer.invoke.mockReset()
+  ipcRenderer.send.mockReset()
   ipcRenderer.on.mockReset()
   ipcRenderer.removeListener.mockReset()
 })
@@ -73,5 +75,18 @@ describe('createBridge', () => {
     const file = {} as File
     expect(createBridge().getPathForFile(file)).toBe('C:\\x\\a.mp4')
     expect(webUtils.getPathForFile).toHaveBeenCalledWith(file)
+  })
+
+  it('reports a dropped file to main before returning its path', () => {
+    webUtils.getPathForFile.mockReturnValue('C:/media/clip.mp4')
+    const api = createBridge()
+    expect(api.getPathForFile({} as File)).toBe('C:/media/clip.mp4')
+    expect(ipcRenderer.send).toHaveBeenCalledWith('app:approveDropped', 'C:/media/clip.mp4')
+  })
+
+  it('does not report an empty path', () => {
+    webUtils.getPathForFile.mockReturnValue('')
+    createBridge().getPathForFile({} as File)
+    expect(ipcRenderer.send).not.toHaveBeenCalled()
   })
 })

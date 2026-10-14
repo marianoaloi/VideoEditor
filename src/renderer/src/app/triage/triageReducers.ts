@@ -10,6 +10,7 @@ import {
   markEdited,
   openSession,
   popDecision,
+  popDecisionByEntry,
   recordDecision,
   recordTrash,
   reinsertRestored,
@@ -35,10 +36,17 @@ export const triageReducers = {
   ) {
     recordTrash(state, action.payload.itemId, action.payload.advance ?? true)
   },
-  /** Pops the latest decision and puts its item back (main already reversed the file move). */
-  undoApplied(state: TriageCoreState, action: PayloadAction<{ restoredPath?: string }>) {
-    const decision = popDecision(state)
-    if (decision !== null) applyUndo(state, decision, action.payload.restoredPath)
+  /**
+   * Pops the latest decision, or the one with `entryId` (undo of a specific move, M1), and puts
+   * its item back (main already reversed the file move).
+   */
+  undoApplied(
+    state: TriageCoreState,
+    action: PayloadAction<{ restoredPath?: string; entryId?: string }>
+  ) {
+    const { entryId, restoredPath } = action.payload
+    const decision = entryId === undefined ? popDecision(state) : popDecisionByEntry(state, entryId)
+    if (decision !== null) applyUndo(state, decision, restoredPath)
   },
   /** Empty stack: main undid the latest journal entry of the root and returned the item. */
   journalRestored(state: TriageCoreState, action: PayloadAction<SessionItem>) {

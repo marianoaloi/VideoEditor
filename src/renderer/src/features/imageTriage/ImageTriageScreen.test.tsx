@@ -5,6 +5,8 @@ import type { Session } from '@shared/domain/session'
 import type { RendererApi } from '@shared/ipc/contract'
 import { setBridge } from '../../app/api'
 import { createAppStore } from '../../app/store'
+import { workspaceActivated } from '../../app/keymap/keymapSlice'
+import KeymapHost from '../../app/keymap/KeymapHost'
 import { sessionOpened } from './imageTriageSlice'
 import ImageTriageScreen from './ImageTriageScreen'
 
@@ -57,5 +59,33 @@ describe('ImageTriageScreen', () => {
     fireEvent.error(screen.getAllByRole('img')[0] as HTMLElement)
     await waitFor(() => expect(screen.getAllByText('a.gif').length).toBeGreaterThan(0))
     expect(screen.getAllByTestId('image-tile')).toHaveLength(2)
+  })
+
+  it('M5: L asks first and sends nothing until confirmed; cancel sends nothing at all', async () => {
+    const calls: string[] = []
+    setBridge({
+      invoke: async (channel) => {
+        calls.push(String(channel))
+        return { ok: false, error: { code: 'NOT_IMPLEMENTED', message: String(channel) } }
+      },
+      on: () => () => undefined,
+      getPathForFile: () => ''
+    } as RendererApi)
+    const store = createAppStore()
+    store.dispatch(workspaceActivated('imageTriage'))
+    store.dispatch(sessionOpened({ ...session, items: session.items.map((i, n) => ({ ...i, id: `r${n}` })) }))
+    render(
+      <Provider store={store}>
+        <ImageTriageScreen />
+        <KeymapHost />
+      </Provider>
+    )
+    fireEvent.keyDown(window, { key: 'l', code: 'KeyL' })
+    expect(await screen.findByText(/will be sent to the trash/)).toBeTruthy()
+    expect(screen.getByText(/0 files moved to R in this session/)).toBeTruthy()
+    expect(calls.filter((c) => c.startsWith('hooks:') || c.startsWith('fileops:preclean'))).toEqual([])
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByText(/will be sent to the trash/)).toBeNull())
+    expect(calls.filter((c) => c.startsWith('hooks:') || c.startsWith('fileops:preclean'))).toEqual([])
   })
 })

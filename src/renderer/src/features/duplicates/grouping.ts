@@ -1,9 +1,11 @@
 /**
  * Pure grouping / ordering / badge / selection logic of the Duplicates table
  * (duplicates-thumbs.md §7, §8.2-§8.7, port checklist 21-24, 27).
- * Values and paths are compared as exact strings, except that Windows paths are case-folded.
+ * Grouping itself is `groupDuplicates` of `@shared/core/duplicates` (the one implementation);
+ * this module only shapes its groups into table rows. Windows paths are case-folded by `pathKey`.
  */
-import { HASH_KEYS, type HashKey, type HashKind, type HashRow } from '@shared/domain/hash'
+import { groupDuplicates, pathKey, roundHalfEven } from '@shared/core/duplicates'
+import { HASH_KEYS, type DuplicateGroup, type HashKey, type HashKind, type HashRow } from '@shared/domain/hash'
 
 /** What the table needs to know about a file, from `media:probeMany`; `null` = missing/unreadable. */
 export interface FileFacts {
@@ -34,45 +36,20 @@ export interface KeyCount {
   files: number
 }
 
-const WINDOWS_PATH = /^(?:[A-Za-z]:|\\\\)/
-
-/** Comparison identity of a path (case-folded for Windows paths, `/` separators). */
-export function pathIdentity(path: string): string {
-  const slashed = path.replace(/\\/g, '/')
-  return WINDOWS_PATH.test(path) ? slashed.toLowerCase() : slashed
-}
-
-interface RawGroup {
-  value: string
-  members: TableMember[]
-}
-
-function valueOf(row: HashRow, key: HashKey): string | null {
-  return row[key]
-}
-
-/** Groups by one key: values shared by more than one distinct path, ascending by value. */
-export function groupByKey(rows: readonly HashRow[], key: HashKey): RawGroup[] {
-  const byValue = new Map<string, Map<string, TableMember>>()
-  for (const row of rows) {
-    const value = valueOf(row, key)
-    if (value === null || value === '') continue
-    const members = byValue.get(value) ?? new Map<string, TableMember>()
-    const id = pathIdentity(row.path)
-    if (!members.has(id)) members.set(id, { path: row.path, value, row })
-    byValue.set(value, members)
-  }
-  return [...byValue.entries()]
-    .filter(([, members]) => members.size > 1)
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    .map(([value, members]) => ({ value, members: [...members.values()] }))
+/** One member per distinct path of a group, carrying the first CSV row of that path. */
+function membersOf(group: DuplicateGroup): TableMember[] {
+  return group.paths.map((path) => {
+    const id = pathKey(path)
+    const row = group.rows.find((r) => pathKey(r.path) === id) ?? group.rows[0]
+    return { path, value: group.value, row: row as HashRow }
+  })
 }
 
 /** Button counts for the six keys (checklist 23): value groups and distinct files. */
 export function keyCounts(rows: readonly HashRow[]): KeyCount[] {
   return HASH_KEYS.map((key) => {
-    const groups = groupByKey(rows, key)
-    const files = new Set(groups.flatMap((g) => g.members.map((m) => pathIdentity(m.path))))
+    const groups = groupDuplicates(rows, key)
+    const files = new Set(groups.flatMap((g) => g.paths.map((p) => pathKey(p))))
     return { key, groups: groups.length, files: files.size }
   })
 }
@@ -80,9 +57,10 @@ export function keyCounts(rows: readonly HashRow[]): KeyCount[] {
 /** Table rows of a key before ordering: de-duplicated by the ordered member list (§8.2 step 4). */
 export function tableRowsForKey(rows: readonly HashRow[], key: HashKey): TableRow[] {
   const seen = new Map<string, TableRow>()
-  for (const group of groupByKey(rows, key)) {
-    const id = group.members.map((m) => pathIdentity(m.path)).join('|')
-    seen.set(id, { id, members: group.members })
+  for (const group of groupDuplicates(rows, key)) {
+    const members = membersOf(group)
+    const id = members.map((m) => pathKey(m.path)).join('|')
+    seen.set(id, { id, members })
   }
   return [...seen.values()]
 }
@@ -114,22 +92,13 @@ export function orderRows(rows: readonly TableRow[], kind: HashKind, facts: Fact
 /** Distinct paths of the rows (selection / probing scope). */
 export function pathsOf(rows: readonly TableRow[]): string[] {
   const seen = new Map<string, string>()
-  for (const row of rows) for (const m of row.members) seen.set(pathIdentity(m.path), m.path)
+  for (const row of rows) for (const m of row.members) seen.set(pathKey(m.path), m.path)
   return [...seen.values()]
 }
 
 // ---- DIF badge (§8.4) -----------------------------------------------------------------------
 
 export type DifBadge = { kind: 'none' } | { kind: 'blue' } | { kind: 'red'; percent: number }
-
-/** Python `format(x, '.0f')`: ties round half to even. */
-export function roundHalfEven(value: number): number {
-  const floor = Math.floor(value)
-  const diff = value - floor
-  if (diff < 0.5) return floor
-  if (diff > 0.5) return floor + 1
-  return floor % 2 === 0 ? floor : floor + 1
-}
 
 /** `firstSize` = CSV size of the first member of the row. */
 export function difBadge(firstSize: number, size: number): DifBadge {
@@ -147,17 +116,17 @@ export function selectAll(rows: readonly TableRow[]): string[] {
 
 /** Additive: every member except the first (best) one of each row. */
 export function unselectFirstColumn(rows: readonly TableRow[], current: readonly string[]): string[] {
-  const next = new Map(current.map((p) => [pathIdentity(p), p]))
+  const next = new Map(current.map((p) => [pathKey(p), p]))
   for (const row of rows) {
-    for (const m of row.members.slice(1)) next.set(pathIdentity(m.path), m.path)
+    for (const m of row.members.slice(1)) next.set(pathKey(m.path), m.path)
   }
   return [...next.values()]
 }
 
 export function toggleSelected(current: readonly string[], path: string): string[] {
-  const id = pathIdentity(path)
-  return current.some((p) => pathIdentity(p) === id)
-    ? current.filter((p) => pathIdentity(p) !== id)
+  const id = pathKey(path)
+  return current.some((p) => pathKey(p) === id)
+    ? current.filter((p) => pathKey(p) !== id)
     : [...current, path]
 }
 
@@ -192,13 +161,13 @@ export function applyMoveFileTags(
   tags: ReadonlyMap<string, readonly string[]>,
   rows: readonly TableRow[]
 ): string[] {
-  const known = new Map(pathsOf(rows).map((p) => [pathIdentity(p), p]))
-  const next = new Map(current.map((p) => [pathIdentity(p), p]))
+  const known = new Map(pathsOf(rows).map((p) => [pathKey(p), p]))
+  const next = new Map(current.map((p) => [pathKey(p), p]))
   for (const path of tags.get('R') ?? []) {
-    const known_ = known.get(pathIdentity(path))
-    if (known_ !== undefined) next.set(pathIdentity(path), known_)
+    const known_ = known.get(pathKey(path))
+    if (known_ !== undefined) next.set(pathKey(path), known_)
   }
-  for (const path of tags.get('L') ?? []) next.delete(pathIdentity(path))
+  for (const path of tags.get('L') ?? []) next.delete(pathKey(path))
   return [...next.values()]
 }
 
@@ -207,7 +176,7 @@ export function applyMoveFileTags(
 /** Distinct paths with a `worksdWell=False` row (the Feedback list, B10). */
 export function unreadablePaths(rows: readonly HashRow[]): string[] {
   const seen = new Map<string, string>()
-  for (const row of rows) if (!row.worksdWell) seen.set(pathIdentity(row.path), row.path)
+  for (const row of rows) if (!row.worksdWell) seen.set(pathKey(row.path), row.path)
   return [...seen.values()]
 }
 

@@ -5,12 +5,15 @@ import { matchesKindFilter, mediaKindOf } from '@shared/core/mediaKind'
 import type { OpenFolderRequest, Session, SessionItem } from '@shared/domain/session'
 import { appError } from '../../ipc/errors'
 import type { MainContext, SessionRecord, SessionStore } from '../../ipc/context'
+import { resolveGuardedPath } from '../../ipc/pathGuard'
+import { grantRoot, revokeRoots } from '../media/access'
 import { JOURNAL_DIR_NAME, scanFolder, type ScanOptions } from './scan'
 
 const PROGRESS_INTERVAL_MS = 100
 
 interface Entry {
   record: SessionRecord
+  granted: string[]
   requestId: string | undefined
 }
 
@@ -71,7 +74,8 @@ export function createSessionService(ctx: MainContext): SessionService {
 
   const service: SessionService = {
     async open(request) {
-      const root = path.resolve(request.dir)
+      // H2: only a folder the user picked/dropped (or one inside it) can become a session root.
+      const root = await resolveGuardedPath(ctx, request.dir)
       const info = await stat(root).catch(() => null)
       if (info === null || !info.isDirectory()) throw appError('NOT_FOUND', `Folder not found: ${root}`, { path: root })
       const record: SessionRecord = {
@@ -82,13 +86,13 @@ export function createSessionService(ctx: MainContext): SessionService {
         sort: request.sort,
         openedAt: Date.now()
       }
-      ctx.allowlist.addRoot(root)
+      const granted = await grantRoot(ctx.allowlist, root)
       try {
         const session = await scan(record, request.requestId)
-        sessions.set(record.id, { record, requestId: request.requestId })
+        sessions.set(record.id, { record, granted, requestId: request.requestId })
         return session
       } catch (error) {
-        ctx.allowlist.removeRoot(root)
+        revokeRoots(ctx.allowlist, granted)
         throw error
       }
     },
@@ -101,7 +105,7 @@ export function createSessionService(ctx: MainContext): SessionService {
       const entry = sessions.get(sessionId)
       if (entry === undefined) return
       sessions.delete(sessionId)
-      ctx.allowlist.removeRoot(entry.record.root)
+      revokeRoots(ctx.allowlist, entry.granted)
     },
     get: (id) => sessions.get(id)?.record,
     require(id) {

@@ -26,3 +26,10 @@ The legacy duplicate finder computes six keys per file or video frame: `md5`, `p
 
 - The perceptual keys are not bit-identical to legacy values. Re-scan old folders for accurate grouping.
 - No Python at runtime.
+
+## Addendum 2026-10-14: per-folder CSV name, non-destructive rebuild, safe clean (review H4, M7)
+
+- **CSV name.** New files are `<folderName>_<prefix>resultsMD5.txt` (`Photos_img_resultsMD5.txt`) next to the scanned folder, so scanning sibling folders no longer overwrites one shared `img_resultsMD5.txt`. A drive root keeps the legacy name inside the root. The columns and the `.meta.json` sidecar are unchanged.
+- **Legacy name.** Loading by folder prefers the per-folder file and falls back to the legacy `<prefix>resultsMD5.txt` (the existing foreign-root guard still applies). The app never writes or deletes the legacy file.
+- **Rebuild deletes nothing first.** `hashing:rebuild` is the same scan as `hashing:build`: rows go to `<csv>.tmp` and are renamed over the CSV only when the scan completes. Cancel or failure keeps the previous CSV.
+- **Clean.** "Clean" copies the CSV to `<csv>.bak` before it rewrites it. It refuses with a `VALIDATION` error when a row root folder does not exist (unmounted drive, moved folder) or when it would remove every row.

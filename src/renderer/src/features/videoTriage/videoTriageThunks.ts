@@ -85,12 +85,15 @@ export const sendJob = createAppAsyncThunk(
     dispatch(positionRemembered({ itemId: item.id, positionMs: state.player.positionMs }))
     const moved = await dispatch(videoTriageThunks.moveItem({ kind: 'custom' }))
     if (typeof moved.payload !== 'string') return null
+    const entryId = getState().videoTriage.items.find((i) => i.id === item.id)?.entryId ?? null
     try {
       const saved = await call('jobs:saveJob', { videoPath: moved.payload, job })
       dispatch(notify('success', `Job saved for ${basename(moved.payload)}`, { autoHideMs: 2500 }))
       return saved.jsonPath
     } catch (error: unknown) {
-      await dispatch(videoTriageThunks.undo())
+      // Undo THIS move by its entry id: `B` pops whatever was decided last, which may already be
+      // another video if the user kept triaging while the write was failing (review M1).
+      if (entryId !== null) await dispatch(videoTriageThunks.undoEntry(entryId))
       return rejectWithValue(toSerializedError(error))
     }
   }

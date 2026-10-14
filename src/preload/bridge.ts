@@ -68,7 +68,10 @@ export function createBridge(): RendererApi {
     },
 
     getPathForFile(file: File): string {
-      return webUtils.getPathForFile(file)
+      const filePath = webUtils.getPathForFile(file)
+      // Dropped items are approved in main before the renderer can open them (ADR-003).
+      if (filePath !== '') ipcRenderer.send('app:approveDropped', filePath)
+      return filePath
     }
   }
 }

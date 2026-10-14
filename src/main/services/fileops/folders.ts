@@ -4,9 +4,10 @@ import path from 'node:path'
 import type { JournalEntry, MoveManyResult, SidecarMove } from '@shared/domain/fileops'
 import { appError, toIpcError } from '../../ipc/errors'
 import type { SessionRecord } from '../../ipc/context'
-import { longPath, moveEntry, pathExists, uniqueName } from './fsutil'
+import { assertRealInside } from '../../ipc/pathGuard'
+import { longPath, moveEntry, pathExists, samePath, uniqueName } from './fsutil'
 import type { JournalStore } from './journal'
-import { sidecarOf, trashOne, type OpsDeps } from './operations'
+import { nameLimits, sidecarOf, trashOne, type OpsDeps } from './operations'
 
 async function listEntries(dir: string): Promise<{ name: string; isDir: boolean; size: number }[]> {
   const entries = await readdir(longPath(dir), { withFileTypes: true })
@@ -35,9 +36,16 @@ export async function resetFolder(
   session: SessionRecord,
   folder: string
 ): Promise<MoveManyResult> {
+  const backupName = deps.ctx.settings.get().folders.backup
+  if (samePath(folder, backupName)) {
+    throw appError('VALIDATION', `${backupName} holds image backups and cannot be reset`, { folder })
+  }
   const dir = path.join(session.root, folder)
   if (!pathExists(dir)) throw appError('NOT_FOUND', `Folder ${folder} does not exist`, { path: dir })
-  const entries = await listEntries(dir)
+  await assertRealInside(session.root, dir)
+  // H3: the backup folders next to the images stay where they are; moving `L/bkp` into the root
+  // would merge it with other backups and put it back into the scan.
+  const entries = (await listEntries(dir)).filter((e) => !(e.isDir && samePath(e.name, backupName)))
   const skip = sidecarNames(entries.map((e) => e.name))
   const written: JournalEntry[] = []
   const result: MoveManyResult = { moved: [], failed: [] }
@@ -45,7 +53,12 @@ export async function resetFolder(
     const src = path.join(dir, entry.name)
     try {
       const hasSidecar = !entry.isDir && pathExists(sidecarOf(src))
-      const free = uniqueName(session.root, entry.name, (c) => pathExists(c) || (hasSidecar && pathExists(sidecarOf(c))))
+      const free = uniqueName(
+        session.root,
+        entry.name,
+        (c) => pathExists(c) || (hasSidecar && pathExists(sidecarOf(c))),
+        nameLimits(hasSidecar)
+      )
       const sidecar: SidecarMove | null = hasSidecar ? { from: sidecarOf(src), to: sidecarOf(free.path) } : null
       await moveEntry(src, free.path)
       if (sidecar !== null) await moveEntry(sidecar.from, sidecar.to)
@@ -77,6 +90,7 @@ export async function precleanFolder(
 ): Promise<string[]> {
   const dir = path.join(session.root, folder)
   if (!pathExists(dir)) return []
+  await assertRealInside(session.root, dir)
   const targets = (await listEntries(dir)).filter((e) => isPrecleanTarget(e.name, e.size, e.isDir))
   const written: JournalEntry[] = []
   const trashed: string[] = []

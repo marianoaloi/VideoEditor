@@ -139,3 +139,21 @@ export function statusParts(items: readonly TriageItem[], cursor: number, root: 
 }
 
 export const ANIMATED_STATUS_COLOR = '#90EE90'
+
+/**
+ * Confirmation text of `L` (review M5): `deleteR` trashes EVERY file directly inside R, not only
+ * what this session put there, so the count of this session is a lower bound.
+ */
+export function sendConfirmMessage(
+  movedHere: number,
+  root: string | null,
+  rightName: string,
+  leftName: string
+): string {
+  const where = root === null ? rightName : `${root}${root.includes('\\') ? '\\' : '/'}${rightName}`
+  const files = `${String(movedHere)} file${movedHere === 1 ? '' : 's'} moved to ${rightName} in this session`
+  return (
+    `Every file directly inside "${where}" will be sent to the trash (${files}, plus any that were already there). ` +
+    `Then "${leftName}" is cleaned and uploaded according to your hooks.`
+  )
+}

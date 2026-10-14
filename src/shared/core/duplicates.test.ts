@@ -86,3 +86,16 @@ describe('groupDuplicates (item 21, section 12a)', () => {
     expect(g?.sizeDiffPercent).toBe(50)
   })
 })
+
+describe('pathKey Windows auto-fold (grouping unification)', () => {
+  const one = (path: string): HashRow => ({ ...(rows[0] as HashRow), path, md5: 'SAME' })
+
+  it('folds case for Windows-looking paths without any option, never for POSIX paths', () => {
+    expect(groupDuplicates([one('C:/d/A.mp4'), one('c:/d/a.mp4')], 'md5')).toEqual([])
+    expect(groupDuplicates([one('/d/A.mp4'), one('/d/a.mp4')], 'md5')).toHaveLength(1)
+  })
+
+  it('still groups two genuinely different Windows paths', () => {
+    expect(groupDuplicates([one('C:/d/a.mp4'), one('C:/e/a.mp4')], 'md5')).toHaveLength(1)
+  })
+})

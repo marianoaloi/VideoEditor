@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
-import { app, BrowserWindow, dialog, ipcMain, protocol, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, protocol, session, shell } from 'electron'
 import icon from '../../resources/icon.png?asset'
 import { registerAllIpc, type RegisteredIpc } from './ipc/registerAll'
 import { registerMediaProtocol } from './services/media/protocol'
@@ -54,6 +54,14 @@ function lockDownNavigation(win: BrowserWindow): void {
   })
 }
 
+/** The app asks for no web permission (camera, geolocation, notifications, ...): deny them all (L1). */
+function denyAllPermissions(): void {
+  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
+    callback(false)
+  })
+  session.defaultSession.setPermissionCheckHandler(() => false)
+}
+
 function loadRenderer(win: BrowserWindow): void {
   const devUrl = getDevServerUrl()
   const loading = devUrl
@@ -99,6 +107,7 @@ function focusExistingWindow(): void {
 function onReady(): void {
   electronApp.setAppUserModelId(APP_USER_MODEL_ID)
   app.on('browser-window-created', (_event, window) => optimizer.watchWindowShortcuts(window))
+  denyAllPermissions()
 
   ipc = registerAllIpc({
     ipcMain,
@@ -121,7 +130,7 @@ function bootstrap(): void {
     return
   }
   app.on('second-instance', focusExistingWindow)
-  // Kills running ffmpeg jobs and detaches the IPC handlers.
+  // Kills running ffmpeg jobs, hook processes and transcodes, and detaches the IPC handlers.
   app.on('before-quit', () => ipc?.dispose())
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit()

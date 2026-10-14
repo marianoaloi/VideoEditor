@@ -25,6 +25,8 @@ export interface TestEnv {
   readonly trashDir: string
   readonly events: SentEvent[]
   readonly trashed: string[]
+  /** Kills running hook processes (what quit does). */
+  dispose(): void
   call(channel: string, request?: unknown): Promise<unknown>
   ok<T>(channel: string, request?: unknown): Promise<T>
 }
@@ -39,7 +41,15 @@ export async function touch(file: string, content = 'x'): Promise<string> {
   return file
 }
 
-export async function createEnv(settings: Settings = DEFAULT_SETTINGS): Promise<TestEnv> {
+/** Test stand-in for "the user picked this folder in a native dialog" (H2). */
+export function approveFolder(ctx: MainContext, dir: string): void {
+  ctx.approvals.addRoot(dir)
+}
+
+export async function createEnv(
+  settings: Settings = DEFAULT_SETTINGS,
+  options: { approveBase?: boolean } = {}
+): Promise<TestEnv> {
   resetHandlers()
   const base = await makeBase()
   const userData = path.join(base, 'userData')
@@ -67,15 +77,16 @@ export async function createEnv(settings: Settings = DEFAULT_SETTINGS): Promise<
     },
     newId: () => `id-${++counter}`
   })
+  if (options.approveBase !== false) approveFolder(ctx, base)
   registerSettingsIpc(ctx)
   registerSessionIpc(ctx)
   registerFileopsIpc(ctx)
-  registerHooksIpc(ctx)
+  const hooks = registerHooksIpc(ctx)
   const call = (channel: string, request?: unknown) => dispatch(channel, request)
   const ok = async <T>(channel: string, request?: unknown): Promise<T> => {
     const result = await dispatch(channel, request)
     if (!result.ok) throw new Error(`${channel}: ${result.error.code} ${result.error.message}`)
     return result.data as T
   }
-  return { ctx, base, userData, trashDir, events, trashed, call, ok }
+  return { ctx, base, userData, trashDir, events, trashed, call, ok, dispose: () => hooks.dispose() }
 }

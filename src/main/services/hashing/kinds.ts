@@ -3,6 +3,7 @@
  * lower-cased extension of the FILE NAME (legacy bug B6 matched substrings of the whole path).
  */
 import { extname } from 'node:path'
+import { isVideoFileName } from '@shared/core/videoExtensions'
 import type { HashKind } from '@shared/domain/hash'
 
 export const IMAGE_EXTENSIONS: ReadonlySet<string> = new Set([
@@ -21,33 +22,6 @@ export const IMAGE_EXTENSIONS: ReadonlySet<string> = new Set([
   'heif'
 ])
 
-export const VIDEO_EXTENSIONS: ReadonlySet<string> = new Set([
-  'mp4',
-  'm4v',
-  'mov',
-  'qt',
-  'avi',
-  'mkv',
-  'webm',
-  'mpg',
-  'mpeg',
-  'mpe',
-  'm1v',
-  'wmv',
-  'asf',
-  'flv',
-  'f4v',
-  '3gp',
-  '3g2',
-  '3gpp',
-  'ogv',
-  'ts',
-  'mts',
-  'm2ts',
-  'vob',
-  'divx'
-])
-
 function extensionOf(fileName: string): string {
   return extname(fileName).slice(1).toLowerCase()
 }
@@ -58,7 +32,7 @@ export function acceptsFile(kind: HashKind, fileName: string): boolean {
     case 'image':
       return IMAGE_EXTENSIONS.has(ext)
     case 'video':
-      return VIDEO_EXTENSIONS.has(ext)
+      return isVideoFileName(fileName)
     case 'gif':
       return ext === 'gif'
   }

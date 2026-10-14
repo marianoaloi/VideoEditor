@@ -98,7 +98,12 @@ export class JobsService {
     return {
       hooks: this.ctx.services.has('hooks') ? this.ctx.services.require('hooks') : null,
       hookTemplate: (name) => this.settings().hooks[name],
-      trash: (file, root) => this.trashWithJournal(file, root)
+      trash: (file, root) => this.trashWithJournal(file, root),
+      probeDurationMs: async (file) => {
+        const deps = this.executorDeps()
+        const info = await deps.probe(file, deps.tools().ffprobe)
+        return info.durationMs > 0 ? info.durationMs : null
+      }
     }
   }
 

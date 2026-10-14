@@ -2,17 +2,19 @@
  * Steps after a successful job (research §9.2, checklist 27-33):
  *
  *   1. `uploadOutputs` hook when the job has "upload" on (disabled hook = skipped, not a failure);
- *   2. trash the source video and its `.json` when "delete original" is on, but only after `done`
- *      and, if the upload hook actually ran, only when it exited 0 (legacy trashed regardless, B23).
+ *   2. trash the source video and its `.json` when "delete original" is on, but only after `done`,
+ *      only when every output's probed duration matches the expected range duration (M8: a
+ *      truncated output must not cost the source), and, if the upload hook actually ran, only when
+ *      it exited 0 (legacy trashed regardless, B23).
  *
  * `uploadAll` runs once per drained batch (`runUploadAll`). Hooks are disabled by default; the
  * hook service decides what "disabled" means and reports it as `skipped`.
  */
-import { createHash } from 'node:crypto'
-import { createReadStream } from 'node:fs'
 import path from 'node:path'
+import { resolveRanges } from '@shared/core/ffmpegArgs'
 import type { CommandTemplate, HookContext, HookExit, HookName } from '@shared/domain/hooks'
 import type { HookService } from '../../ipc/context'
+import { md5OfFile } from '../hashing/build'
 import { exists } from './jobFiles'
 import type { JobPayload } from './jobExecutor'
 import type { ExecHandle } from './jobQueue'
@@ -21,13 +23,49 @@ export interface PostDeps {
   readonly hooks: HookService | null
   hookTemplate(name: HookName): CommandTemplate
   trash(path: string, root: string): Promise<void>
+  /** Probed duration of a media file in ms; `null` when it has none. */
+  probeDurationMs(path: string): Promise<number | null>
 }
 
-/** Streaming MD5 of a file (never read whole into memory, B23). */
-export async function md5OfFile(file: string): Promise<string> {
-  const hash = createHash('md5')
-  for await (const chunk of createReadStream(file)) hash.update(chunk as Buffer)
-  return hash.digest('hex')
+/** Allowed difference between an output and its expected duration (encoder frame/keyframe slack). */
+export const DURATION_TOLERANCE_MS = 2000
+export const DURATION_TOLERANCE_RATIO = 0.1
+
+/** Expected output durations: one per range, or their sum when the job concatenates. */
+export function expectedDurationsMs(job: JobPayload['job'], sourceMs: number): number[] {
+  const spans = resolveRanges(job, { durationMs: sourceMs, width: 0, height: 0, bitrateKbps: null, rotation: 0, hasAudio: false })
+  const each = spans.map((s) => (s.start < 0 ? sourceMs : s.end - s.start))
+  return job.posExecution === 2 ? [each.reduce((a, b) => a + b, 0)] : each
+}
+
+function withinTolerance(actual: number, expected: number): boolean {
+  const slack = Math.max(DURATION_TOLERANCE_MS, expected * DURATION_TOLERANCE_RATIO)
+  return Math.abs(actual - expected) <= slack
+}
+
+/** `null` when every output matches the expected duration, else why the source must be kept. */
+export async function verifyOutputDurations(
+  deps: PostDeps,
+  payload: JobPayload,
+  outputs: readonly string[]
+): Promise<string | null> {
+  try {
+    const sourceMs = (await deps.probeDurationMs(payload.videoPath)) ?? 0
+    const expected = expectedDurationsMs(payload.job, sourceMs)
+    if (expected.length !== outputs.length) {
+      return `expected ${expected.length} output(s) but the job produced ${outputs.length}`
+    }
+    for (const [index, output] of outputs.entries()) {
+      const want = expected[index] ?? 0
+      const actual = await deps.probeDurationMs(output)
+      if (actual === null || !withinTolerance(actual, want)) {
+        return `${path.basename(output)} lasts ${actual ?? 'an unknown number of'} ms, expected about ${want} ms`
+      }
+    }
+    return null
+  } catch (error) {
+    return `the outputs could not be verified (${error instanceof Error ? error.message : String(error)})`
+  }
 }
 
 export function referencesMd5(template: CommandTemplate): boolean {
@@ -112,6 +150,11 @@ export async function postJob(
   if (!payload.options.deleteOriginal) return
   if (upload === 'failed') {
     log('The original was kept because the upload hook failed')
+    return
+  }
+  const mismatch = await verifyOutputDurations(deps, payload, outputs)
+  if (mismatch !== null) {
+    log(`The original was kept: ${mismatch}`)
     return
   }
   await trashOriginal(deps, payload, log)

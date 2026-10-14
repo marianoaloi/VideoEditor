@@ -2,18 +2,51 @@
  * Hash CSV files on disk (research §3, §8.10): location, atomic write, load with root guard,
  * clean, concat and the `<csv>.meta.json` sidecar that records the hash origin (ADR-007).
  */
-import { readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { copyFile, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { parseHashCsv, serializeHashCsv } from '@shared/core/hashCsv'
 import { HASH_CSV_PREFIX, HASH_CSV_SUFFIX, type HashKind, type HashRow } from '@shared/domain/hash'
 import { AppError } from '../../ipc/errors'
 import { HASH_ALGO_VERSION, HASH_ORIGIN, type CsvMeta } from './provider'
 
-/** `join(dirname(resolve(root)), prefix + "resultsMD5.txt")`; a drive root keeps the CSV inside. */
-export function csvPathFor(dir: string, kind: HashKind): string {
+const MAX_FOLDER_PART = 100
+// eslint-disable-next-line no-control-regex -- control characters are invalid in Windows names
+const UNSAFE_NAME_CHARS = /[<>:"/\\|?*\u0000-\u001f]/g
+
+/**
+ * Legacy location and name (`join(dirname(resolve(root)), prefix + "resultsMD5.txt")`), shared by
+ * every sibling folder: rebuilding one overwrote the others' CSV (review H4). Still LOADED when
+ * the per-folder file is absent, never written by this app. A drive root keeps the CSV inside.
+ */
+export function legacyCsvPathFor(dir: string, kind: HashKind): string {
   const root = path.resolve(dir)
   const parent = path.dirname(root)
   return path.join(parent === root ? root : parent, `${HASH_CSV_PREFIX[kind]}${HASH_CSV_SUFFIX}`)
+}
+
+/** Per-folder CSV next to the folder: `<folderName>_<prefix>resultsMD5.txt` (ADR-007 addendum). */
+export function csvPathFor(dir: string, kind: HashKind): string {
+  const root = path.resolve(dir)
+  const parent = path.dirname(root)
+  if (parent === root) return legacyCsvPathFor(dir, kind)
+  const folder = path.basename(root).replace(UNSAFE_NAME_CHARS, '_').slice(0, MAX_FOLDER_PART)
+  return path.join(parent, `${folder}_${HASH_CSV_PREFIX[kind]}${HASH_CSV_SUFFIX}`)
+}
+
+export interface LocatedCsv {
+  readonly csvPath: string
+  readonly exists: boolean
+  /** The file is the shared legacy one. */
+  readonly legacy: boolean
+}
+
+/** The per-folder CSV when present, else the legacy one when present, else the per-folder path. */
+export async function locateCsv(dir: string, kind: HashKind): Promise<LocatedCsv> {
+  const current = csvPathFor(dir, kind)
+  if (await csvExists(current)) return { csvPath: current, exists: true, legacy: false }
+  const legacy = legacyCsvPathFor(dir, kind)
+  if (legacy !== current && (await csvExists(legacy))) return { csvPath: legacy, exists: true, legacy: true }
+  return { csvPath: current, exists: false, legacy: false }
 }
 
 export function metaPathFor(csvPath: string): string {
@@ -115,6 +148,48 @@ export async function dropMissing(rows: readonly HashRow[]): Promise<HashRow[]> 
     if (!known.has(row.path)) known.set(row.path, await fileExists(row.path))
   }
   return rows.filter((row) => known.get(row.path) === true)
+}
+
+async function isDirectory(dir: string): Promise<boolean> {
+  try {
+    return (await stat(dir)).isDirectory()
+  } catch (error) {
+    if (errnoCode(error) === 'ENOENT' || errnoCode(error) === 'ENOTDIR') return false
+    throw error
+  }
+}
+
+export interface CleanOutcome {
+  readonly rows: HashRow[]
+  readonly removed: number
+}
+
+/**
+ * "Clean" (review M7): refuses when a root folder of the CSV is not there (unmounted drive, moved
+ * folder) or when it would drop every row, and keeps `<csv>.bak` of what it replaced.
+ */
+export async function cleanCsv(csvPath: string): Promise<CleanOutcome> {
+  const rows = await readRows(csvPath)
+  const roots = new Set(rows.map((row) => row.root).filter((root) => path.isAbsolute(root)))
+  for (const root of roots) {
+    if (!(await isDirectory(root))) {
+      throw new AppError(
+        'VALIDATION',
+        `Clean was not run: the folder ${root} is not available (unmounted drive or moved folder?).`,
+        { csvPath, root }
+      )
+    }
+  }
+  const kept = await dropMissing(rows)
+  if (kept.length === 0 && rows.length > 0) {
+    throw new AppError('VALIDATION', 'Clean was not run: it would remove every row of the hash file.', {
+      csvPath
+    })
+  }
+  if (kept.length === rows.length) return { rows: kept, removed: 0 }
+  await copyFile(csvPath, `${csvPath}.bak`)
+  await writeRows(csvPath, kept)
+  return { rows: kept, removed: rows.length - kept.length }
 }
 
 export interface ConcatOutcome {

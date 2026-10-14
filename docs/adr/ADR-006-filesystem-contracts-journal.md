@@ -27,7 +27,7 @@ External scripts and the operator's habits depend on the per-folder `L/`, `R/` a
   - In-place edits (crop, rotate) are not decisions. They are undone with their own command (un-crop restores from `bkp/`).
   - When the stack is empty, for example after the app restarts, undo falls back to the **latest undoable journal entry for this root**. It reverses that entry and puts the item back into the session if it is part of it.
 - **Trash:** `shell.trashItem`.
-- **In-place image edits** (crop, rotate) first copy the original to `bkp/` (unless a backup already exists) and record a journal entry. Un-crop restores the file from `bkp/`.
+- **In-place image edits** (crop, rotate) first copy the original bytes to `bkp/<name>` and record a journal entry. The write format is the file's real (sniffed) format, not its extension. *Amended (wave 3):* a backup has an **identity**. `<root>/.mediamaloi/backups.json` maps each edited file to its backup, the SHA-256 of the original and the SHA-256 of what the last edit wrote. A backup is reused for further edits only while the file still hashes to that value; if another image has arrived under the same name, the new original goes to a numbered copy (`name (1).ext`) and nothing is overwritten. **Un-crop (Ctrl+F)** restores only when the file still matches the last edit, then **consumes** the backup (image-triage checklist 41); a changed file or a backup of unknown origin is refused with `CONFLICT`. `fileops:resetFolder` leaves backup folders where they are, and `fileops:undo` ignores journal entries that point outside the session (or, for copies, outside the personal folder).
 - **Session scanning skips** the destination folders, `.mediamaloi/` and the thumbnail cache.
 
 ## Consequences

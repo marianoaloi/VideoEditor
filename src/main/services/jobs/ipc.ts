@@ -2,15 +2,24 @@
 import { JOBS_INVOKE_CHANNELS } from '@shared/ipc/channels/jobs.names'
 import type { MainContext } from '../../ipc/context'
 import { handle } from '../../ipc/handle'
+import { resolveGuardedPath, resolveGuardedPaths } from '../../ipc/pathGuard'
 import { JobsService } from './jobsService'
 
 /** Registers every `jobs:*` channel. Returns the service so the app can abort jobs on quit. */
 export function registerJobsIpc(ctx: MainContext): JobsService {
   const service = new JobsService(ctx)
-  handle('jobs:saveJob', (req) => service.saveJob(req))
-  handle('jobs:readJob', (req) => service.readJob(req.videoPath))
-  handle('jobs:enqueueFolder', (req) => service.enqueueFolder(req))
-  handle('jobs:enqueueFiles', (req) => service.enqueueFiles(req))
+  handle('jobs:saveJob', async (req) =>
+    service.saveJob({ ...req, videoPath: await resolveGuardedPath(ctx, req.videoPath) })
+  )
+  handle('jobs:readJob', async (req) =>
+    service.readJob(await resolveGuardedPath(ctx, req.videoPath))
+  )
+  handle('jobs:enqueueFolder', async (req) =>
+    service.enqueueFolder({ ...req, dir: await resolveGuardedPath(ctx, req.dir) })
+  )
+  handle('jobs:enqueueFiles', async (req) =>
+    service.enqueueFiles({ ...req, paths: await resolveGuardedPaths(ctx, req.paths) })
+  )
   handle('jobs:cancel', (req) => {
     service.cancel(req.jobId)
   })

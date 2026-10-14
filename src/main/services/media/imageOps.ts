@@ -23,6 +23,8 @@ const FORMAT_BY_EXTENSION: Readonly<Record<string, OutputFormat>> = {
   '.avif': 'avif'
 }
 const QUALITY = 95
+/** 100 MP (RGBA raw is ~400 MB); larger files are refused instead of exhausting memory. */
+const MAX_INPUT_PIXELS = 100_000_000
 
 export interface RawImage {
   readonly data: Buffer
@@ -31,14 +33,43 @@ export interface RawImage {
   readonly channels: 1 | 2 | 3 | 4
 }
 
-/** Throws `VALIDATION` ("format not editable") before anything is touched. */
+function notEditable(file: string): AppError {
+  return new AppError('VALIDATION', `Format not editable: ${path.extname(file) || file}`, {
+    path: file
+  })
+}
+
+/** Extension-based format (used only when the content cannot be sniffed). */
 export function writableFormat(file: string): OutputFormat {
   const format = FORMAT_BY_EXTENSION[path.extname(file).toLowerCase()]
-  if (format === undefined) {
-    throw new AppError('VALIDATION', `Format not editable: ${path.extname(file) || file}`, {
-      path: file
+  if (format === undefined) throw notEditable(file)
+  return format
+}
+
+const FORMAT_BY_CONTENT: Readonly<Record<string, OutputFormat>> = {
+  jpeg: 'jpeg',
+  png: 'png',
+  webp: 'webp',
+  tiff: 'tiff'
+}
+
+/**
+ * The format the file REALLY has (checklist 37: a JPEG named `.png` stays a JPEG), so the
+ * rewrite never changes the encoding behind the user's back. Throws `VALIDATION` for anything
+ * that cannot be written back (gif, svg, heic, ...).
+ */
+export async function detectWritableFormat(data: Buffer, file: string): Promise<OutputFormat> {
+  const meta = await sharp(data, { failOn: 'none' })
+    .metadata()
+    .catch((cause: unknown) => {
+      throw new AppError('VALIDATION', 'Not a readable image', { path: file }, { cause })
     })
+  if (meta.format === 'heif') {
+    if (meta.compression === 'av1') return 'avif'
+    throw notEditable(file)
   }
+  const format = meta.format === undefined ? undefined : FORMAT_BY_CONTENT[meta.format]
+  if (format === undefined) throw notEditable(file)
   return format
 }
 
@@ -51,14 +82,20 @@ function toRaw(data: Buffer, info: OutputInfo): RawImage {
   }
 }
 
-/** Decodes tolerantly, applies the EXIF orientation, refuses animated files. */
-export async function loadOriented(file: string): Promise<RawImage> {
-  const meta = await sharp(file, { failOn: 'none' }).metadata()
+/**
+ * Decodes tolerantly, applies the EXIF orientation, refuses animated files. An embedded ICC
+ * profile is converted to sRGB (the output carries no profile, so the colours would shift
+ * otherwise). EXIF is not written back: the orientation is baked into the pixels.
+ */
+export async function loadOriented(source: string | Buffer): Promise<RawImage> {
+  const meta = await sharp(source, { failOn: 'none' }).metadata()
   if ((meta.pages ?? 1) > 1) {
-    throw new AppError('VALIDATION', 'Animated images are not editable', { path: file })
+    throw new AppError('VALIDATION', 'Animated images are not editable', {
+      path: typeof source === 'string' ? source : undefined
+    })
   }
-  const { data, info } = await sharp(file, { failOn: 'none' })
-    .rotate()
+  const pipeline = sharp(source, { failOn: 'none', limitInputPixels: MAX_INPUT_PIXELS }).rotate()
+  const { data, info } = await (meta.icc === undefined ? pipeline : pipeline.withIccProfile('srgb'))
     .raw()
     .toBuffer({ resolveWithObject: true })
   return toRaw(data, info)

@@ -5,6 +5,7 @@
 import { ApiError, call, toSerializedError } from '../../app/api'
 import { notify } from '../../app/notifications/notify'
 import { createAppAsyncThunk } from '../../app/thunk'
+import { describeOutcome, runHookAndWait } from '../../app/triage/hookRun'
 import { DEFAULT_SETTINGS } from '@shared/domain/settings'
 import type { EnqueueResult } from '@shared/domain/job'
 import { joinPath, resolveRoot } from './jobsLogic'
@@ -106,7 +107,9 @@ export interface MoviesOutcome {
 
 /**
  * "Clean queue and execute movie": cancel the queue, trash zero-byte files and logs of `L/`,
- * run `moviesL` on `L/` when it exists, then `deleteR` (built-in trash of the `R/` files).
+ * run `moviesL` on `L/` when it exists and WAIT for it to end, then `deleteR` (built-in trash of
+ * the `R/` files). `deleteR` never starts while `moviesL` is still running (review M12), and a
+ * failing `moviesL` keeps the files of `R/` (nothing is trashed after a failed movie).
  */
 export const cleanAndExecuteMovie = createAppAsyncThunk(
   'jobs/cleanAndExecuteMovie',
@@ -127,9 +130,16 @@ export const cleanAndExecuteMovie = createAppAsyncThunk(
       } finally {
         await call('session:close', { sessionId: session.id })
       }
-      if (leftExists) await call('hooks:run', { name: 'moviesL', context: { dir: left, root } })
-      else dispatch(notify('warning', `Folder ${left} does not exist; movie not started`))
-      await call('hooks:run', { name: 'deleteR', context: { dir: joinPath(root, names.right), root } })
+      let movieOk = true
+      if (leftExists) {
+        const movie = await runHookAndWait('moviesL', { dir: left, root })
+        movieOk = movie.status === 'disabled' || movie.code === 0
+        if (!movieOk) dispatch(notify('warning', `moviesL: ${describeOutcome(movie)}; ${names.right} was not emptied`))
+      } else dispatch(notify('warning', `Folder ${left} does not exist; movie not started`))
+      if (movieOk) {
+        const deleted = await runHookAndWait('deleteR', { dir: joinPath(root, names.right), root })
+        dispatch(notify('info', `delete ${names.right}: ${describeOutcome(deleted)}`))
+      }
       dispatch(
         notify('info', `Queue cleared (${String(cleared.cancelled)} cancelled), ${String(precleaned)} empty/log files trashed`)
       )

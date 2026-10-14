@@ -29,6 +29,7 @@ beforeEach(async () => {
     trashItem: async () => undefined,
     newId: () => 'id'
   })
+  base.approvals.addRoot(parent)
   registerHashingIpc({ ...base, sendEvent: (_c, p) => void events.push(p) })
 })
 afterEach(async () => {
@@ -64,7 +65,7 @@ describe('hashing ipc', () => {
       dir: scan,
       kind: 'image'
     })
-    expect(info).toEqual({ csvPath: path.join(parent, 'img_resultsMD5.txt'), exists: false })
+    expect(info).toEqual({ csvPath: path.join(parent, 'photos_img_resultsMD5.txt'), exists: false })
     const res = await dispatch('hashing:load', { source: { dir: scan, kind: 'image' } })
     expect(res.ok).toBe(false)
     if (!res.ok) expect(res.error.code).toBe('NOT_FOUND')
@@ -107,17 +108,106 @@ describe('hashing ipc', () => {
     const rows = [row(keep), row(keep, { pureMD5: 'P2' }), row(path.join(scan, 'gone.png'))]
     expect(await ok('hashing:save', { csvPath: csv, rows })).toEqual({ csvPath: csv, rowCount: 3 })
     expect((await readFile(csv, 'utf8')).startsWith('root,inFile,path,md5')).toBe(true)
-    const cleaned = await ok<{ table: HashTable; removed: number }>('hashing:clean', { csvPath: csv })
+    const cleaned = await ok<{ table: HashTable; removed: number }>('hashing:clean', {
+      csvPath: csv
+    })
     expect(cleaned.removed).toBe(1)
     expect(cleaned.table.rows).toHaveLength(2)
     const reread = await ok<HashTable>('hashing:load', { source: { csvPath: csv } })
     expect(reread.rows).toHaveLength(2)
   })
 
+  it('H4: sibling folders get their own CSV; rebuilding one keeps the other and a failed rebuild keeps the old CSV', async () => {
+    const other = path.join(parent, 'holiday')
+    await mkdir(other)
+    await writePattern(scan, 'a.png', 'png')
+    await writePattern(other, 'z.png', 'png')
+    const a = await ok<{ csvPath: string }>('hashing:build', {
+      taskId: 'a',
+      dir: scan,
+      kind: 'image'
+    })
+    const b = await ok<{ csvPath: string }>('hashing:build', {
+      taskId: 'b',
+      dir: other,
+      kind: 'image'
+    })
+    expect(a.csvPath).not.toBe(b.csvPath)
+    const before = await readFile(a.csvPath, 'utf8')
+    await ok('hashing:rebuild', { taskId: 'b2', dir: other, kind: 'image' })
+    expect(await readFile(a.csvPath, 'utf8')).toBe(before)
+    await rm(other, { recursive: true })
+    const failed = await dispatch('hashing:rebuild', { taskId: 'b3', dir: other, kind: 'image' })
+    expect(failed.ok).toBe(false)
+    expect((await readFile(b.csvPath, 'utf8')).length).toBeGreaterThan(0)
+  })
+
+  it('H4: a legacy fixed-name CSV of this folder is still loaded, and a rebuild leaves it in place', async () => {
+    await writePattern(scan, 'a.png', 'png')
+    const legacy = path.join(parent, 'img_resultsMD5.txt')
+    await writeFile(legacy, serializeHashCsv([row(path.join(scan, 'a.png'), { root: scan })]))
+    const info = await ok<{ csvPath: string; exists: boolean }>('hashing:csvPath', {
+      dir: scan,
+      kind: 'image'
+    })
+    expect(info).toEqual({ csvPath: legacy, exists: true })
+    expect(
+      (await ok<HashTable>('hashing:load', { source: { dir: scan, kind: 'image' } })).csvPath
+    ).toBe(legacy)
+    const built = await ok<{ csvPath: string }>('hashing:rebuild', {
+      taskId: 'r',
+      dir: scan,
+      kind: 'image'
+    })
+    expect(built.csvPath).toBe(path.join(parent, 'photos_img_resultsMD5.txt'))
+    expect((await stat(legacy)).isFile()).toBe(true)
+    const loaded = await ok<HashTable>('hashing:load', { source: { dir: scan, kind: 'image' } })
+    expect(loaded.csvPath).toBe(built.csvPath)
+  })
+
+  it('M7: clean keeps a .bak of the old file', async () => {
+    await writePattern(scan, 'keep.png', 'png')
+    const csv = path.join(parent, 'c.txt')
+    const keep = path.join(scan, 'keep.png')
+    await writeFile(csv, serializeHashCsv([row(keep), row(path.join(scan, 'gone.png'))]))
+    const original = await readFile(csv, 'utf8')
+    await ok('hashing:clean', { csvPath: csv })
+    expect(await readFile(`${csv}.bak`, 'utf8')).toBe(original)
+  })
+
+  it('M7: clean refuses when the CSV root folder is missing (unmounted drive) and touches nothing', async () => {
+    const csv = path.join(parent, 'c.txt')
+    const text = serializeHashCsv([row(path.join(parent, 'unplugged', 'x.png'))])
+    await writeFile(csv, text)
+    const res = await dispatch('hashing:clean', { csvPath: csv })
+    expect(res.ok).toBe(false)
+    if (!res.ok) {
+      expect(res.error.code).toBe('VALIDATION')
+      expect(res.error.message).toContain('not available')
+    }
+    expect(await readFile(csv, 'utf8')).toBe(text)
+  })
+
+  it('M7: clean refuses when it would remove every row', async () => {
+    const csv = path.join(parent, 'c.txt')
+    const text = serializeHashCsv([
+      row(path.join(scan, 'gone1.png')),
+      row(path.join(scan, 'gone2.png'))
+    ])
+    await writeFile(csv, text)
+    const res = await dispatch('hashing:clean', { csvPath: csv })
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.error.message).toContain('every row')
+    expect(await readFile(csv, 'utf8')).toBe(text)
+  })
+
   it('concat keeps current rows, appends only matching pureMD5, warns on mixed origins (item 30)', async () => {
     const a = path.join(parent, 'a.txt')
     const b = path.join(parent, 'b.txt')
-    await writeFile(a, serializeHashCsv([row('/x/1', { pureMD5: 'P1' }), row('/x/2', { pureMD5: null })]))
+    await writeFile(
+      a,
+      serializeHashCsv([row('/x/1', { pureMD5: 'P1' }), row('/x/2', { pureMD5: null })])
+    )
     await writeFile(
       b,
       serializeHashCsv([
@@ -134,7 +224,10 @@ describe('hashing ipc', () => {
     expect(res.added).toBe(1)
     expect(res.table.rows.map((r) => r.path)).toEqual(['/x/1', '/x/2', '/y/1'])
     expect(res.warning).not.toBeNull()
-    const same = await ok<{ warning: string | null }>('hashing:concat', { csvPath: b, otherCsvPath: b })
+    const same = await ok<{ warning: string | null }>('hashing:concat', {
+      csvPath: b,
+      otherCsvPath: b
+    })
     expect(same.warning).toBeNull()
   })
 

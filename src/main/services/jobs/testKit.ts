@@ -43,6 +43,7 @@ export function makeKit(dir: string, settings: Settings = DEFAULT_SETTINGS): Kit
     },
     newId: () => `id${++counter}`
   })
+  ctx.approvals.addRoot(dir)
   ctx.services.provide('journal', {
     record: (root, entry, sessionId) => {
       journal.push({ root, entry })
@@ -53,10 +54,20 @@ export function makeKit(dir: string, settings: Settings = DEFAULT_SETTINGS): Kit
   const hooks: HookService = {
     run: (request): Promise<HookRunStarted> => {
       hookCalls.push(request)
-      return Promise.resolve({ runId: `r${hookCalls.length}`, name: request.name, skipped: hookExit.skipped })
+      return Promise.resolve({
+        runId: `r${hookCalls.length}`,
+        name: request.name,
+        skipped: hookExit.skipped
+      })
     },
     waitForExit: (runId): Promise<HookExit> =>
-      Promise.resolve({ runId, name: 'uploadOutputs', code: hookExit.code, durationMs: 1, error: null })
+      Promise.resolve({
+        runId,
+        name: 'uploadOutputs',
+        code: hookExit.code,
+        durationMs: 1,
+        error: null
+      })
   }
   ctx.services.provide('hooks', hooks)
   return {

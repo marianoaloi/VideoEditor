@@ -274,7 +274,7 @@ describe('image edits (ADR-006)', () => {
     expect((await sharp(file).metadata()).width).toBe(20)
   })
 
-  it('crop then restore round-trips to the original pixels; the backup stays', async () => {
+  it('crop then restore round-trips to the original pixels and consumes the backup (checklist 41)', async () => {
     const file = await makePng('round.png')
     const original = await readFile(file)
     await call('media:imageEdit', {
@@ -285,7 +285,7 @@ describe('image edits (ADR-006)', () => {
     const restored = await call('media:imageRestoreBackup', { sessionId, path: file })
     expect(restored.restored).toBe(true)
     expect(await readFile(file)).toEqual(original)
-    expect((await stat(path.join(session, 'bkp', 'round.png'))).isFile()).toBe(true)
+    await expect(stat(path.join(session, 'bkp', 'round.png'))).rejects.toThrow()
     expect(journal.at(-1)?.entry.backup).toBe(restored.backupPath)
     const none = await call('media:imageRestoreBackup', {
       sessionId,

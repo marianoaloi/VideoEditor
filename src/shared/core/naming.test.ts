@@ -36,6 +36,45 @@ describe('names', () => {
   })
 })
 
+describe('limitName: code points, bytes and sidecar reserve (review M10)', () => {
+  const EMOJI = String.fromCodePoint(0x1f600)
+
+  it('never cuts a surrogate pair in half', () => {
+    const out = limitName(`${EMOJI.repeat(200)}.mp4`, '/r/L') ?? ''
+    expect(out.length).toBeGreaterThan(0)
+    expect(out.length).toBeLessThanOrEqual(255)
+    expect(out.endsWith('.mp4')).toBe(true)
+    const first = out.charCodeAt(0)
+    expect(first >= 0xdc00 && first <= 0xdfff).toBe(false)
+  })
+
+  it('bounds the UTF-8 byte length when asked (Linux counts bytes)', () => {
+    const name = `${String.fromCharCode(0xe9).repeat(200)}.mp4`
+    expect(limitName(name, '/r/L')).toBe(name)
+    const out = limitName(name, '/r/L', { byteLimit: true }) ?? ''
+    expect(new TextEncoder().encode(out).length).toBeLessThanOrEqual(255)
+    expect(out.endsWith('.mp4')).toBe(true)
+  })
+
+  it('keeps room for the sidecar suffix', () => {
+    const out = limitName(`${'z'.repeat(300)}.mp4`, '/r/L', { reserve: '.json'.length }) ?? ''
+    expect(out.length + '.json'.length).toBeLessThanOrEqual(255)
+    expect(`/r/L/${out}.json`.length).toBeLessThanOrEqual(254)
+  })
+
+  it('resolveDestination applies the options (the sidecar of a long name stays under 255)', () => {
+    const result = resolveDestination({
+      root: '/r',
+      folder: 'L',
+      sourcePath: `/r/${'q'.repeat(251)}.mp4`,
+      recursive: false,
+      exists: () => false,
+      limits: { reserve: 5 }
+    })
+    expect(result.ok && result.value.name.length + 5 <= 255).toBe(true)
+  })
+})
+
 describe('limitName', () => {
   it('keeps short names and trims the start of long ones', () => {
     expect(limitName('a.mp4', 'C:\\r\\L')).toBe('a.mp4')

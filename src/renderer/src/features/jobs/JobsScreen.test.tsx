@@ -15,6 +15,14 @@ import { jobEventReceived } from './jobsSlice'
 type Bridge = NonNullable<Parameters<typeof setBridge>[0]>
 type Handler = (request: unknown) => unknown
 
+/** `hooks:exit` listeners registered through the fake bridge. */
+const exitListeners = new Set<(payload: unknown) => void>()
+function emitHookExit(runId: string, name: string, extra: object = {}): void {
+  for (const listener of exitListeners) {
+    listener({ runId, name, code: 0, durationMs: 1, error: null, ...extra })
+  }
+}
+
 function installBridge(handlers: Record<string, Handler>) {
   const invoke = vi.fn((channel: string, request: unknown) => {
     const handler = handlers[channel]
@@ -23,7 +31,12 @@ function installBridge(handlers: Record<string, Handler>) {
     }
     return Promise.resolve({ ok: true, data: handler(request) })
   })
-  setBridge({ invoke, on: () => () => undefined, getPathForFile: () => '' } as unknown as Bridge)
+  const on = (channel: string, listener: (payload: unknown) => void): (() => void) => {
+    if (channel !== 'hooks:exit') return () => undefined
+    exitListeners.add(listener)
+    return () => exitListeners.delete(listener)
+  }
+  setBridge({ invoke, on, getPathForFile: () => '' } as unknown as Bridge)
   return invoke
 }
 
@@ -134,8 +147,14 @@ describe('Jobs screen', () => {
         return null
       },
       'hooks:run': (request) => {
-        calls.push(`hook:${(request as { name: string }).name}`)
-        return { runId: 'r', name: 'moviesL', skipped: false }
+        const name = (request as { name: string }).name
+        calls.push(`hook:${name}`)
+        // moviesL takes a while: deleteR must not start before its exit event (review M12)
+        setTimeout(() => {
+          calls.push(`exit:${name}`)
+          emitHookExit(`run-${name}`, name, name === 'deleteR' ? { trashed: 2 } : {})
+        }, name === 'moviesL' ? 60 : 1)
+        return { runId: `run-${name}`, name, skipped: false }
       }
     })
     renderJobs()
@@ -147,7 +166,15 @@ describe('Jobs screen', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Run' }))
 
     await waitFor(() => expect(calls).toContain('hook:deleteR'))
-    expect(calls).toEqual(['clear', 'open', 'preclean', 'close', 'hook:moviesL', 'hook:deleteR'])
+    expect(calls.slice(0, 7)).toEqual([
+      'clear',
+      'open',
+      'preclean',
+      'close',
+      'hook:moviesL',
+      'exit:moviesL',
+      'hook:deleteR'
+    ])
     expect(invoke).toHaveBeenCalledWith('hooks:run', {
       name: 'moviesL',
       context: { dir: '/media/L', root: '/media' }

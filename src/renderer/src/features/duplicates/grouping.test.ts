@@ -1,15 +1,14 @@
 import { describe, expect, it } from 'vitest'
+import { groupDuplicates, pathKey, roundHalfEven } from '@shared/core/duplicates'
 import type { HashRow } from '@shared/domain/hash'
 import {
   applyMoveFileTags,
   difBadge,
   exportScreenData,
   firstLinePaths,
-  groupByKey,
   keyCounts,
   orderRows,
   parseMoveFileOutput,
-  roundHalfEven,
   sanitizeFolderName,
   tableRowsForKey,
   unreadablePaths,
@@ -59,8 +58,8 @@ const facts = (bitrateKbps: number, height = 1, hasAudio = false) => ({
 
 describe('grouping (checklist 21-23, vector a)', () => {
   it('21: reproduces the groups of all six keys', () => {
-    const names = (key: Parameters<typeof groupByKey>[1]) =>
-      groupByKey(CSV, key).map((g) => [g.value, g.members.map((m) => m.path)])
+    const names = (key: Parameters<typeof groupDuplicates>[1]) =>
+      groupDuplicates(CSV, key).map((g) => [g.value, g.paths])
     expect(names('md5')).toEqual([['M1', ['/d/a.mp4', '/d/c.mp4']]])
     expect(names('pureMD5')).toEqual([
       ['P2', ['/d/a.mp4', '/d/d.mp4']],
@@ -88,9 +87,16 @@ describe('grouping (checklist 21-23, vector a)', () => {
     expect(tableRowsForKey(CSV, 'pureMD5')).toHaveLength(2)
   })
 
+  it('the Windows auto-fold lives in pathKey: case, slashes and duplicate separators', () => {
+    expect(pathKey('C:\\Pics\\A.JPG')).toBe(pathKey('c:/pics//a.jpg'))
+    expect(pathKey('\\\\NAS\\Share\\x')).toBe('/nas/share/x')
+    expect(pathKey('/d/A.mp4')).not.toBe(pathKey('/d/a.mp4'))
+    expect(pathKey('/d/A.mp4', true)).toBe(pathKey('/d/a.mp4'))
+  })
+
   it('Windows paths differing only in case are one file, so no group', () => {
     const rows = [row('C:/d/A.mp4', { md5: 'X' }), row('C:/d/a.mp4', { md5: 'X' })]
-    expect(groupByKey(rows, 'md5')).toEqual([])
+    expect(groupDuplicates(rows, 'md5')).toEqual([])
   })
 
   it('22: orders by bitrate desc, unreadable last, hides rows with < 2 readable members', () => {

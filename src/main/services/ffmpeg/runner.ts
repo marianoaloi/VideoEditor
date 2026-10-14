@@ -3,9 +3,10 @@
  * judges every step (exit 0 AND size >= minimum), cleans up failed attempts and reports progress.
  *
  * Contract: never throws for ffmpeg failures; the result says `ok`, `cancelled` or the error.
- * Concat parts and the stream-copy temp are removed by this module only while they belong to a
- * failed attempt; after a successful concat the parts go through `trashPart` (journalled by the
- * caller) and are never deleted permanently.
+ * Every step writes `*.part.mp4` (H5); a successful attempt renames the parts to their final names
+ * without replacing an existing file, a failed one removes only its own `.part` files. After a
+ * successful concat the parts go through `trashPart` (journalled by the caller) and are never
+ * deleted permanently.
  */
 import type { VideoJob } from '@shared/domain/job'
 import {
@@ -15,6 +16,7 @@ import {
   type BuilderMedia,
   type FfmpegStep
 } from '@shared/core/ffmpegArgs'
+import { promotePart, toPartSteps } from './runnerOutputs'
 import { buildLadder, describeAttempt, type Attempt } from './runnerLadder'
 import { overallProgress, stepFraction, type ProgressSample } from './runnerProgress'
 import {
@@ -60,6 +62,11 @@ export interface FfmpegJobRequest {
   readonly onLog?: (line: string, source: 'info' | 'stderr') => void
   /** Sends a finished concat part to the trash. Without it the parts stay on disk. */
   readonly trashPart?: (path: string) => Promise<void>
+  /**
+   * Sends an already existing output to the trash before the new one takes its name (journalled by
+   * the caller). Without it the new output gets a `name (n).mp4` collision name; nothing is overwritten.
+   */
+  readonly trashExisting?: (path: string) => Promise<void>
   /** Test seam; defaults to a real ffmpeg process. */
   readonly executor?: StepExecutor
 }
@@ -94,13 +101,14 @@ class JobRun {
     return this.request.signal?.aborted === true
   }
 
-  async attempt(attempt: Attempt, steps: readonly FfmpegStep[]): Promise<AttemptOutcome> {
+  async attempt(attempt: Attempt, finalSteps: readonly FfmpegStep[]): Promise<AttemptOutcome> {
+    const steps = toPartSteps(finalSteps)
     const created: string[] = []
     this.tail.clear()
     for (const [index, step] of steps.entries()) {
       this.log(`$ ffmpeg ${step.argv.join(' ')}`)
       if (this.request.dryRun === true) continue
-      if (step.kind === 'copy') await removeQuietly(step.output)
+      await removeQuietly(step.output)
       created.push(step.output)
       const failure = await this.runStep(steps, index)
       if (failure !== null) {
@@ -110,7 +118,13 @@ class JobRun {
       if (step.kind === 'cut') await this.dropCopyBefore(steps, index)
     }
     if (this.request.dryRun === true) return { ok: true, outputs: [] }
-    return { ok: true, outputs: await this.finish(steps) }
+    try {
+      return { ok: true, outputs: await this.finish(finalSteps, steps) }
+    } catch (error) {
+      await Promise.all(created.map(removeQuietly))
+      const why = error instanceof Error ? error.message : String(error)
+      return { ok: false, cancelled: false, fatal: true, error: `Could not finish the outputs: ${why}` }
+    }
   }
 
   private async runStep(
@@ -147,11 +161,35 @@ class JobRun {
     if (previous?.kind === 'copy') await removeQuietly(previous.output)
   }
 
-  private async finish(steps: readonly FfmpegStep[]): Promise<string[]> {
-    const concat = steps.find((s) => s.kind === 'concat')
-    if (concat === undefined) return partOutputs(steps)
-    if (this.request.keepParts !== true) await this.trashParts(partOutputs(steps))
-    return [concat.output]
+  private async finish(finals: readonly FfmpegStep[], parts: readonly FfmpegStep[]): Promise<string[]> {
+    const concat = finals.findIndex((s) => s.kind === 'concat')
+    if (concat < 0) return this.promoteAll(finals, parts, (s) => s.kind === 'cut')
+    const finalNames = await this.promoteAll(finals, parts, (s) => s.kind === 'concat')
+    const cutParts = partOutputs(parts)
+    if (this.request.keepParts !== true && this.request.trashPart !== undefined) {
+      await this.trashParts(cutParts)
+    } else {
+      await this.promoteAll(finals, parts, (s) => s.kind === 'cut')
+    }
+    return finalNames
+  }
+
+  private async promoteAll(
+    finals: readonly FfmpegStep[],
+    parts: readonly FfmpegStep[],
+    pick: (step: FfmpegStep) => boolean
+  ): Promise<string[]> {
+    const options = {
+      log: (line: string): void => this.log(line),
+      ...(this.request.trashExisting === undefined ? {} : { trashExisting: this.request.trashExisting })
+    }
+    const outputs: string[] = []
+    for (const [index, step] of finals.entries()) {
+      const part = parts[index]
+      if (part === undefined || !pick(step)) continue
+      outputs.push(await promotePart(part.output, step.output, options))
+    }
+    return outputs
   }
 
   private async trashParts(parts: readonly string[]): Promise<void> {

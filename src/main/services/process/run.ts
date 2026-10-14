@@ -11,6 +11,7 @@
  *   Windows, a negative-PID SIGKILL (process group) elsewhere.
  */
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process'
+import path from 'node:path'
 import { Readable } from 'node:stream'
 import { StringDecoder } from 'node:string_decoder'
 
@@ -65,12 +66,18 @@ export interface StreamingProcess {
 const DEFAULT_MAX_CAPTURE = 16 * 1024 * 1024
 const LINE_BREAK = /\r\n|\n|\r/
 
+/** `taskkill.exe` by absolute path: a bare name could be hijacked from the working directory (L2). */
+export function taskkillPath(env: NodeJS.ProcessEnv = process.env): string {
+  const systemRoot = env['SystemRoot'] ?? env['SYSTEMROOT'] ?? env['windir'] ?? 'C:\\Windows'
+  return path.win32.join(systemRoot, 'System32', 'taskkill.exe')
+}
+
 /** Kills `child` and everything it started. Never throws. */
 export function killProcessTree(child: ChildProcess): void {
   const pid = child.pid
   if (pid === undefined || child.exitCode !== null || child.signalCode !== null) return
   if (process.platform === 'win32') {
-    const killer = spawn('taskkill', ['/T', '/F', '/PID', String(pid)], {
+    const killer = spawn(taskkillPath(), ['/T', '/F', '/PID', String(pid)], {
       shell: false,
       windowsHide: true,
       stdio: 'ignore'

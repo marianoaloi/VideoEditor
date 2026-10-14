@@ -55,6 +55,13 @@ async function addJob(name: string, over: Parameters<typeof createVideoJob>[1] =
   return video
 }
 
+/** Sources last 10 s; the fake outputs (`*.N.mp4`, `*.mp4.mp4`) last `outputMs`. */
+let outputMs = 1000
+function probeInfo(file: string): MediaInfo {
+  const isOutput = /\.\d+\.mp4$|\.mp4\.mp4$/.test(file)
+  return { ...INFO, durationMs: isOutput ? outputMs : INFO.durationMs }
+}
+
 /** A service whose ffmpeg is fake: it records argv and writes 5000 bytes. */
 function fakeService(kit: Kit, argvLog: string[][] = []): JobsService {
   const stepExecutor = (): StepExecutor => async (req) => {
@@ -67,7 +74,7 @@ function fakeService(kit: Kit, argvLog: string[][] = []): JobsService {
     logFlushMs: 5,
     executorDeps: {
       tools: () => ({ ffmpeg: 'ffmpeg', ffprobe: 'ffprobe' }),
-      probe: () => Promise.resolve(INFO),
+      probe: (file) => Promise.resolve(probeInfo(file)),
       stepExecutor
     }
   })
@@ -127,6 +134,7 @@ describe('batch folder scan (checklist 24-26)', () => {
     expect(argvs.some((v) => v.includes('scale=200:100'))).toBe(true)
     const again = await service.enqueueFiles({ paths: [a], options: parsedOptions(), force: false })
     expect(again.jobIds).toHaveLength(1)
+    await service.queue.idle()
   })
 
   it('force mode makes whole-video jobs and skips earlier outputs', async () => {
@@ -220,6 +228,31 @@ describe('post-job rules (checklist 27-34)', () => {
     kit.setHookExit(0)
     await service.enqueueFiles({ paths: [video], options: parsedOptions({ upload: true, deleteOriginal: true }), force: false })
     await service.queue.idle()
+    // the first run's output is trashed (journalled) instead of overwritten (H5), then the source
+    expect(kit.trashed).toEqual([`${video}.0.mp4`, video, `${video}.json`])
+  })
+
+  it('M8: an output far shorter than the range keeps the original and logs why', async () => {
+    const kit = makeKit(dir)
+    const video = await addJob('short.mp4', { times: [[0, 8000]] })
+    const service = fakeService(kit)
+    outputMs = 500
+    await service.enqueueFiles({ paths: [video], options: parsedOptions({ deleteOriginal: true }), force: false })
+    await service.queue.idle()
+    outputMs = 1000
+    expect(kit.trashed).toEqual([])
+    const log = service.log(service.list()[0]?.id ?? '')
+    expect(log.lines.join(' ')).toContain('The original was kept')
+  })
+
+  it('M8: an output within tolerance lets the original go', async () => {
+    const kit = makeKit(dir)
+    const video = await addJob('near.mp4', { times: [[0, 8000]] })
+    outputMs = 7300
+    const service = fakeService(kit)
+    await service.enqueueFiles({ paths: [video], options: parsedOptions({ deleteOriginal: true }), force: false })
+    await service.queue.idle()
+    outputMs = 1000
     expect(kit.trashed).toEqual([video, `${video}.json`])
   })
 

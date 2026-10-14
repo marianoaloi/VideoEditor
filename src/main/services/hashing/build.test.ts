@@ -91,7 +91,7 @@ describe('buildHashCsv (items 3-9)', () => {
       provider,
       ...base
     })
-    expect(out.csvPath).toBe(path.join(parent, 'img_resultsMD5.txt'))
+    expect(out.csvPath).toBe(path.join(parent, 'photos_img_resultsMD5.txt'))
     expect(out.csvPath).toBe(csvPathFor(scan, 'image'))
     expect(out).toMatchObject({ fileCount: 5, rowCount: 5, failedCount: 1, cancelled: false })
     const text = await readFile(out.csvPath, 'utf8')
@@ -223,7 +223,7 @@ describe.skipIf(tools === null)('video scan (lavfi)', () => {
     await generateVideo(tools, vids, 'clip.mp4', { seconds: 3, audio: false })
     const out = await buildHashCsv({ dir: vids, kind: 'video', taskId: 'v1', provider })
     const rows = parseHashCsv(await readFile(out.csvPath, 'utf8'))
-    expect(out.csvPath).toBe(path.join(parent, 'vdo_resultsMD5.txt'))
+    expect(out.csvPath).toBe(path.join(parent, 'vids_vdo_resultsMD5.txt'))
     expect(rows.length).toBeGreaterThanOrEqual(3)
     expect(out.rowCount).toBe(rows.length)
     expect(new Set(rows.map((r) => r.md5)).size).toBe(1)

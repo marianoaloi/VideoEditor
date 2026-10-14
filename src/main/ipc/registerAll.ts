@@ -17,11 +17,14 @@ import { registerHashingIpc } from '../services/hashing/ipc'
 import { registerHooksIpc } from '../services/hooks/ipc'
 import { registerJobsIpc } from '../services/jobs/ipc'
 import { registerMediaIpc } from '../services/media/ipc'
+import { killAllTranscodes } from '../services/media/transcode'
 import { registerSessionIpc } from '../services/session/ipc'
 import { registerSettingsIpc } from '../services/settings/ipc'
 import { createMainContext, createSettingsAccess, type MainContext } from './context'
 import { bindIpcMain, missingChannels, type IpcEventLike, type IpcMainLike } from './handle'
+import { approveDroppedPath, DROP_APPROVAL_CHANNEL } from './dropApproval'
 import { createMediaAllowlist } from './mediaAllowlist'
+import { createPathApprovals } from './pathApprovals'
 
 /**
  * Registration order matters only for service slots that are provided at registration time:
@@ -33,11 +36,17 @@ export function registerServices(ctx: MainContext): { dispose(): void } {
   registerAppIpc(ctx)
   registerSessionIpc(ctx)
   registerFileopsIpc(ctx)
-  registerHooksIpc(ctx)
+  const hooks = registerHooksIpc(ctx)
   registerMediaIpc(ctx)
   const jobs = registerJobsIpc(ctx)
   registerHashingIpc(ctx)
-  return { dispose: () => jobs.dispose() }
+  return {
+    dispose: () => {
+      jobs.dispose()
+      hooks.dispose()
+      killAllTranscodes()
+    }
+  }
 }
 
 export interface RegisterAllDeps {
@@ -59,6 +68,7 @@ export function registerAllIpc(deps: RegisterAllDeps): RegisteredIpc {
     getWindow: deps.getWindow,
     settings: createSettingsAccess(DEFAULT_SETTINGS),
     allowlist: createMediaAllowlist(),
+    approvals: createPathApprovals(path.join(deps.userDataDir, 'approved-roots.json')),
     paths: { userData: deps.userDataDir, temp: path.join(deps.tempDir, 'VideoEditor') },
     trashItem: deps.trashItem,
     newId: randomUUID
@@ -72,12 +82,19 @@ export function registerAllIpc(deps: RegisterAllDeps): RegisteredIpc {
 
   const isTrusted = (event: IpcEventLike): boolean => {
     const win = deps.getWindow()
-    return win !== null && !win.isDestroyed() && win.webContents.id === event.sender.id
+    if (win === null || win.isDestroyed() || win.webContents.id !== event.sender.id) return false
+    // Only the top-level frame of the app window may call main (no sub-frames, no other documents).
+    return event.senderFrame === win.webContents.mainFrame
   }
   const unbind = bindIpcMain(deps.ipcMain, isTrusted)
+  const onDropped = (event: IpcEventLike, raw?: unknown): void => {
+    if (isTrusted(event) && typeof raw === 'string') void approveDroppedPath(context, raw)
+  }
+  deps.ipcMain.on?.(DROP_APPROVAL_CHANNEL, onDropped)
   return {
     context,
     dispose: () => {
+      deps.ipcMain.removeListener?.(DROP_APPROVAL_CHANNEL, onDropped)
       unbind()
       services.dispose()
     }

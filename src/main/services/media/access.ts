@@ -48,3 +48,18 @@ export function isInside(root: string, candidate: string): boolean {
   const rel = path.relative(path.resolve(root), path.resolve(candidate))
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))
 }
+
+/**
+ * Grants `media://` access to a session root under BOTH its lexical and its real form, so a
+ * junction/symlink root still passes the realpath re-check (review M2). Returns what to revoke.
+ */
+export async function grantRoot(allowlist: MediaAllowlist, root: string): Promise<string[]> {
+  const real = await realpath(root).catch(() => root)
+  const granted = path.resolve(real) === path.resolve(root) ? [root] : [root, real]
+  for (const entry of granted) allowlist.addRoot(entry)
+  return granted
+}
+
+export function revokeRoots(allowlist: MediaAllowlist, granted: readonly string[]): void {
+  for (const entry of granted) allowlist.removeRoot(entry)
+}

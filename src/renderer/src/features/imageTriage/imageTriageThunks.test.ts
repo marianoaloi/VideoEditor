@@ -176,6 +176,27 @@ describe('send and reset (TV-19, TV-38)', () => {
     expect(text).toContain('exit 3')
   })
 
+  it('M5: separates "hook disabled" from "built-in trash done" and shows the trashed count', async () => {
+    let emitExit: (runId: string, trashed?: number) => void = () => undefined
+    const f = setup({
+      'fileops:preclean': () => ({ trashed: [] }),
+      'hooks:run': (r) => {
+        const name = (r as { name: 'deleteR' | 'uploadImagesL' }).name
+        if (name === 'deleteR') {
+          setTimeout(() => emitExit('d', 3), 5)
+          return { runId: 'd', name, skipped: true, builtIn: true }
+        }
+        return { runId: 'u', name, skipped: true, builtIn: false }
+      }
+    })
+    emitExit = (runId, trashed) =>
+      f.emit('hooks:exit', { runId, name: 'deleteR', code: 0, durationMs: 1, error: null, trashed } as never)
+    await f.store.dispatch(sendImages())
+    const text = JSON.stringify(f.store.getState().notifications)
+    expect(text).toContain('delete R: built-in trash done, 3 trashed')
+    expect(text).toContain('upload L: hook disabled, nothing ran')
+  })
+
   it('Reset L moves the folder back then rescans', async () => {
     const f = setup({
       'fileops:resetFolder': () => ({ moved: [{}], failed: [] }),

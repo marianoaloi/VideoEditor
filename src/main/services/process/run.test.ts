@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { isSuccess, run, spawnStream } from './run'
+import { isSuccess, run, spawnStream, taskkillPath } from './run'
 
 const NODE = process.execPath
+
+describe('taskkillPath (review L2)', () => {
+  it('is an absolute System32 path, never a bare name', () => {
+    expect(taskkillPath({ SystemRoot: 'D:\\WINNT' })).toBe('D:\\WINNT\\System32\\taskkill.exe')
+    expect(taskkillPath({})).toBe('C:\\Windows\\System32\\taskkill.exe')
+  })
+})
 
 function script(code: string): string[] {
   return ['-e', code]

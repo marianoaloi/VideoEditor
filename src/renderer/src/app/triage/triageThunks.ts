@@ -25,7 +25,7 @@ export interface TriageActions {
   sessionClosed: ActionCreatorWithoutPayload
   decisionRecorded: ActionCreatorWithPayload<RecordDecisionInput>
   trashRecorded: ActionCreatorWithPayload<{ itemId: string; advance?: boolean }>
-  undoApplied: ActionCreatorWithPayload<{ restoredPath?: string }>
+  undoApplied: ActionCreatorWithPayload<{ restoredPath?: string; entryId?: string }>
   journalRestored: ActionCreatorWithPayload<SessionItem>
 }
 
@@ -250,5 +250,25 @@ export function createTriageThunks(config: TriageThunkConfig) {
       })
   )
 
-  return { openFolder, closeFolder, moveItem, skipItem, copyToPersonal, trashItem, undo }
+  /**
+   * Reverses ONE move by its journal entry id, whatever else was decided since (M1): used when a
+   * follow-up step of that move fails (`sendJob` could not write the job JSON).
+   */
+  const undoEntry = createAppAsyncThunk(
+    `${name}/undoEntry`,
+    (entryId: string, { dispatch, getState, rejectWithValue }) =>
+      serial(async () => {
+        const { sessionId } = select(getState())
+        if (sessionId === null) return false
+        try {
+          const result = await call('fileops:undo', { sessionId, entryId })
+          dispatch(actions.undoApplied({ restoredPath: result.restoredPath, entryId }))
+          return true
+        } catch (error: unknown) {
+          return rejectWithValue(toSerializedError(error))
+        }
+      })
+  )
+
+  return { openFolder, closeFolder, moveItem, skipItem, copyToPersonal, trashItem, undo, undoEntry }
 }

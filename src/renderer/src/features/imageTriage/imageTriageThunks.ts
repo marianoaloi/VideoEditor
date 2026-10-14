@@ -4,11 +4,12 @@
  * Moves, skip, undo, copy and trash come from `imageTriageThunks` (ADR-006).
  */
 import type { CropResult, Rect } from '@shared/domain/geometry'
-import type { HookExit, HookName } from '@shared/domain/hooks'
+import type { HookName } from '@shared/domain/hooks'
 import { cropLabel, fitRectToImage } from '@shared/core/cropMath'
 import { toMediaUrl } from '@shared/ipc/mediaUrl'
-import { call, onEvent, toSerializedError } from '../../app/api'
+import { call, toSerializedError } from '../../app/api'
 import { notify } from '../../app/notifications/notify'
+import { describeOutcome, runHookAndWait } from '../../app/triage/hookRun'
 import { currentItem, type TriageItem } from '../../app/triage/triageCore'
 import { createAppAsyncThunk } from '../../app/thunk'
 import { measureImage } from './imageSize'
@@ -259,25 +260,7 @@ export const timerTick = createAppAsyncThunk(
 // ---- send (`L`) ---------------------------------------------------------------------------
 
 async function runHook(name: HookName, dir: string, root: string): Promise<string> {
-  const seen: HookExit[] = []
-  let wake: (() => void) | null = null
-  const off = onEvent('hooks:exit', (event) => {
-    seen.push(event)
-    wake?.()
-  })
-  try {
-    const started = await call('hooks:run', { name, context: { dir, root } })
-    if (started.skipped) return 'disabled'
-    for (;;) {
-      const exit = seen.find((e) => e.runId === started.runId)
-      if (exit !== undefined) return exit.code === 0 ? 'ok' : `exit ${exit.code ?? 'none'}`
-      await new Promise<void>((resolve) => {
-        wake = resolve
-      })
-    }
-  } finally {
-    off()
-  }
+  return describeOutcome(await runHookAndWait(name, { dir, root }))
 }
 
 let sending = false

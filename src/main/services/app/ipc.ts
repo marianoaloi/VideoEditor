@@ -4,6 +4,7 @@ import { stat } from 'node:fs/promises'
 import { appError } from '../../ipc/errors'
 import { handle } from '../../ipc/handle'
 import type { MainContext } from '../../ipc/context'
+import { assertSafePathSyntax } from '../../ipc/pathGuard'
 
 async function showOpenDialog(win: BrowserWindow | null, options: OpenDialogOptions) {
   return win === null ? dialog.showOpenDialog(options) : dialog.showOpenDialog(win, options)
@@ -24,7 +25,9 @@ export function registerAppIpc(ctx: MainContext): void {
       ...(req.title === undefined ? {} : { title: req.title }),
       ...(req.defaultPath === undefined ? {} : { defaultPath: req.defaultPath })
     })
-    return { canceled: result.canceled, path: result.canceled ? null : (result.filePaths[0] ?? null) }
+    const picked = result.canceled ? null : (result.filePaths[0] ?? null)
+    if (picked !== null) ctx.approvals.addRoot(picked) // the user chose it in a native dialog
+    return { canceled: result.canceled, path: picked }
   })
 
   handle('app:openFilesDialog', async (req) => {
@@ -34,10 +37,13 @@ export function registerAppIpc(ctx: MainContext): void {
       ...(req.defaultPath === undefined ? {} : { defaultPath: req.defaultPath }),
       ...(req.filters === undefined ? {} : { filters: req.filters })
     })
-    return { canceled: result.canceled, paths: result.canceled ? [] : result.filePaths }
+    const paths = result.canceled ? [] : result.filePaths
+    for (const file of paths) ctx.approvals.addFile(file)
+    return { canceled: result.canceled, paths }
   })
 
   handle('app:revealInFolder', async (req) => {
+    assertSafePathSyntax(req.path)
     await stat(req.path).catch(() => {
       throw appError('NOT_FOUND', `Not found: ${req.path}`, { path: req.path })
     })
@@ -45,6 +51,7 @@ export function registerAppIpc(ctx: MainContext): void {
   })
 
   handle('app:openFolder', async (req) => {
+    assertSafePathSyntax(req.path)
     await requireDirectory(req.path)
     const failure = await shell.openPath(req.path)
     if (failure.length > 0) throw appError('IO', failure, { path: req.path })

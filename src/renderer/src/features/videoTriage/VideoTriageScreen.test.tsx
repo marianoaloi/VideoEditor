@@ -10,7 +10,7 @@ import { setBridge } from '../../app/api'
 import { allHandlers, clearHandlers } from '../../app/keymap/registry'
 import { createAppStore } from '../../app/store'
 import VideoTriageScreen from './VideoTriageScreen'
-import { handlesSet, sessionOpened } from './videoTriageSlice'
+import { handlesSet, sessionOpened, videoTriageThunks } from './videoTriageSlice'
 
 vi.mock('../../components/MediaPlayer/MediaPlayer', () => ({
   default: () => <div data-testid="player" />
@@ -18,7 +18,7 @@ vi.mock('../../components/MediaPlayer/MediaPlayer', () => ({
 vi.mock('../../components/CropDialog', () => ({ default: () => null }))
 vi.mock('../../components/ZoomViewer', () => ({ default: () => null }))
 
-type Handler = (request: unknown) => IpcResult<unknown>
+type Handler = (request: unknown) => IpcResult<unknown> | Promise<IpcResult<unknown>>
 
 const INFO = (path: string): MediaInfo => ({
   path,
@@ -205,6 +205,31 @@ describe('Video Triage screen', () => {
       videoPath: '/in/CUSTOM/v0.mp4',
       job: { times: [[18_054, 46_182]], posExecution: 1, convert: false }
     })
+  })
+
+  it('M1: a failed job write undoes THIS move by entry id, not whatever was decided last', async () => {
+    const store = await mount()
+    act(() => {
+      store.dispatch(handlesSet({ low: 1000, high: 5000, active: 1 }))
+    })
+    handlers['jobs:saveJob'] = async () => {
+      // the user keeps triaging while the write is failing: v1 gets skipped (top of the stack)
+      await store.dispatch(videoTriageThunks.skipItem())
+      return { ok: false, error: { code: 'INTERNAL', message: 'disk full' } }
+    }
+    handlers['fileops:undo'] = () => ({
+      ok: true,
+      data: { entry: entry('u1', '/in/CUSTOM/v0.mp4', '/in/v0.mp4'), restoredPath: '/in/v0.mp4', item: null }
+    })
+    press('videoTriage.cut')
+    await waitFor(() => expect(channelsCalled()).toContain('fileops:undo'))
+    expect(calls.find((c) => c.channel === 'fileops:undo')?.request).toMatchObject({
+      sessionId: 's1',
+      entryId: 'e-/in/v0.mp4'
+    })
+    await waitFor(() => expect(store.getState().videoTriage.items[0]?.status).toBe('pending'))
+    expect(store.getState().videoTriage.items[1]?.status).toBe('skipped')
+    expect(store.getState().videoTriage.decisions.map((d) => d.kind)).toEqual(['skip'])
   })
 
   it('V sorts the ranges and uses concat; Ctrl+Shift+C writes the whole-video sentinel (checklist 40-42)', async () => {

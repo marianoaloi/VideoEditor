@@ -16,6 +16,7 @@ import {
 } from '@shared/core/videoJob'
 import type { ReadJobResult, SaveJobResult, VideoJob, VideoJobDraft } from '@shared/domain/job'
 import { AppError } from '../../ipc/errors'
+import { isAlreadyExists, moveExclusive } from '../ffmpeg/exclusiveMove'
 
 const JSON_SUFFIX = /\.json$/i
 
@@ -58,18 +59,13 @@ async function isFile(target: string): Promise<boolean> {
   }
 }
 
-/** The session root of a jobs folder: its parent when it is the CUSTOM folder, else itself. */
-export function rootOfJobsDir(jobsDir: string, customName: string): string {
-  const same =
-    process.platform === 'win32'
-      ? path.basename(jobsDir).toLowerCase() === customName.toLowerCase()
-      : path.basename(jobsDir) === customName
-  return same ? path.dirname(jobsDir) : jobsDir
-}
-
 /** The root for a video: `<root>/CUSTOM/x.mp4` belongs to `<root>`; anything else to its folder. */
 export function rootOfVideo(videoPath: string, customName: string): string {
-  return rootOfJobsDir(path.dirname(videoPath), customName)
+  const dir = path.dirname(videoPath)
+  const base = path.basename(dir)
+  const isCustom =
+    process.platform === 'win32' ? base.toLowerCase() === customName.toLowerCase() : base === customName
+  return isCustom ? path.dirname(dir) : dir
 }
 
 export function videoPathOfJson(jsonPath: string): string {
@@ -145,7 +141,7 @@ export async function scanJobsDir(dir: string): Promise<ScanEntry[]> {
   return entries
 }
 
-const DERIVED = /\.(copy|converted)\.mp4$/i
+const DERIVED = /\.(copy|converted|part)\.mp4$/i
 const NUMBERED_PART = /^(.+\.[A-Za-z0-9]+)\.\d+\.mp4$/
 
 /** Output files of earlier runs (`v.mp4.0.mp4`, `v.mp4.mp4`, `v.mp4.copy.mp4`) are not sources. */
@@ -175,16 +171,19 @@ export async function listFolderVideos(dir: string): Promise<string[]> {
   return result
 }
 
-/** Moves `source` into `<root>/<folder>/`, picking a free name. Returns the new path. */
+/** Moves `source` into `<root>/<folder>/`, picking a free name; never replaces a file (M6). */
 export async function moveAside(source: string, root: string, folder: string): Promise<string> {
   const destDir = path.join(root, folder)
   await mkdir(destDir, { recursive: true })
   const name = path.basename(source)
   for (let n = 0; n < 1000; n += 1) {
     const target = path.join(destDir, collisionName(name, n))
-    if (await exists(target)) continue
-    await rename(source, target)
-    return target
+    try {
+      await moveExclusive(source, target)
+      return target
+    } catch (error) {
+      if (!isAlreadyExists(error)) throw error
+    }
   }
   throw new AppError('ALREADY_EXISTS', `No free name for ${name} in ${destDir}`)
 }

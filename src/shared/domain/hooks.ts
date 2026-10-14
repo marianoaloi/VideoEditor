@@ -122,7 +122,12 @@ export const HookRunStartedSchema = z.object({
   runId: IdSchema,
   name: HookNameSchema,
   /** True when the hook is disabled or has no command (built-in `deleteR` work still runs). */
-  skipped: z.boolean()
+  skipped: z.boolean(),
+  /**
+   * True when main also runs a built-in step (`deleteR` trashing the files of `<root>/R`).
+   * `skipped && builtIn` = "only the built-in step runs, no command"; `skipped && !builtIn` = nothing runs.
+   */
+  builtIn: z.boolean().optional()
 });
 export type HookRunStarted = z.infer<typeof HookRunStartedSchema>;
 
@@ -136,7 +141,9 @@ export const HookPreviewSchema = z.object({
   command: z.string(),
   args: z.array(z.string()),
   cwd: z.string().nullable(),
-  env: z.record(z.string(), z.string())
+  env: z.record(z.string(), z.string()),
+  /** Settings hints, e.g. "this command is a shell" or "resolves to <absolute path>". */
+  warnings: z.array(z.string()).optional()
 });
 export type HookPreview = z.infer<typeof HookPreviewSchema>;
 
@@ -154,6 +161,8 @@ export const HookExitSchema = z.object({
   /** `null` when the process could not start or was killed. */
   code: z.number().int().nullable(),
   durationMs: NonNegIntSchema,
-  error: IpcErrorSchema.nullable()
+  error: IpcErrorSchema.nullable(),
+  /** `deleteR`: how many files the built-in step sent to the trash (0 when R was empty). */
+  trashed: NonNegIntSchema.optional()
 });
 export type HookExit = z.infer<typeof HookExitSchema>;

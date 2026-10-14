@@ -12,6 +12,8 @@ export interface HashProvider {
   hashImage(path: string, signal?: AbortSignal): Promise<PerceptualKeys[]>
   /** Keys of a video/gif: one entry per kept frame; an empty list means "no decodable frame". */
   hashVideo(path: string, signal?: AbortSignal): Promise<PerceptualKeys[]>
+  /** Releases worker threads or other resources; the scanner calls it when a scan ends. */
+  dispose?(): Promise<void>
 }
 
 /** Version of the algorithm written to `<csv>.meta.json`; bump when the key definitions change. */

@@ -82,6 +82,9 @@ export function resetHandlers(): void {
 export interface IpcMainLike {
   handle(channel: string, listener: (event: IpcEventLike, ...args: unknown[]) => unknown): void
   removeHandler(channel: string): void
+  /** One-way messages (`ipcRenderer.send`), e.g. the preload's "the user dropped this path". */
+  on?(channel: string, listener: (event: IpcEventLike, ...args: unknown[]) => void): void
+  removeListener?(channel: string, listener: (event: IpcEventLike, ...args: unknown[]) => void): void
 }
 
 /**
