@@ -1,8 +1,12 @@
-/** Stub (wave 1). Owner (wave 2): svc-files. Replace `registerStubs` with the real `handle()` calls. */
-import { HOOKS_INVOKE_CHANNELS } from '@shared/ipc/channels/hooks.names'
+/** Hook service: `hooks:run|preview` and the `hooks` slot. */
 import type { MainContext } from '../../ipc/context'
-import { registerStubs } from '../../ipc/stub'
+import { handle } from '../../ipc/handle'
+import { createHookService } from './service'
 
-export function registerHooksIpc(_ctx: MainContext): void {
-  registerStubs(HOOKS_INVOKE_CHANNELS)
+export function registerHooksIpc(ctx: MainContext): void {
+  const service = createHookService(ctx)
+  ctx.services.provide('hooks', service)
+
+  handle('hooks:run', (req) => service.run(req))
+  handle('hooks:preview', (req) => service.preview(req.template, req.context))
 }

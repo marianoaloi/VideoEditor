@@ -73,7 +73,9 @@ class Normaliser {
   size(field: string, value: unknown): string | null {
     if (value === null || value === undefined || value === '') return null;
     const text = typeof value === 'number' ? String(Math.trunc(value)) : value;
-    if (typeof text === 'string' && VideoSizeSchema.safeParse(text.trim()).success) return text.trim();
+    // The legacy UI also wrote "640X360" (adaptSize.py); the schema only knows the lowercase form.
+    const trimmed = typeof text === 'string' ? text.trim().replace(/^(-?\d+)X(-?\d+)$/, '$1x$2') : '';
+    if (VideoSizeSchema.safeParse(trimmed).success) return trimmed;
     this.warn(`${field}: "${String(value)}" is not "WxH", "W:H" or "-1"; ignored`);
     return null;
   }
@@ -183,10 +185,11 @@ export function parseAnyVideoJob(raw: unknown, ctx: VideoJobContext): ParseVideo
   if (!isRecord(raw)) return { ok: false, error: 'The job file is not a JSON object', warnings: [] };
   const format = detectVideoJobFormat(raw);
   if (format === 'v2') {
-    if (raw['version'] !== 2) {
-      return { ok: false, error: `Unsupported job version ${String(raw['version'])}`, warnings: [] };
+    const version = raw['version'];
+    if (version !== 1 && version !== 2) {
+      return { ok: false, error: `Unsupported job version ${String(version)}`, warnings: [] };
     }
-    const strict = VideoJobSchema.safeParse({ ...raw, filename: ctx.videoPath });
+    const strict = VideoJobSchema.safeParse({ ...raw, filename: ctx.videoPath, version: 2 });
     if (strict.success) return { ok: true, job: strict.data, format, warnings: [] };
     n.warn(`v2 job failed validation, read leniently: ${strict.error.issues.map((i) => i.message).join('; ')}`);
   }

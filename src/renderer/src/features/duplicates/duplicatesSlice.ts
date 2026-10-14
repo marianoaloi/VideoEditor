@@ -13,6 +13,7 @@ import type {
   HashRow
 } from '@shared/domain/hash'
 import { call, toSerializedError, type SerializedError } from '../../app/api'
+import { keyCounts, type FileFacts } from './grouping'
 import { createAppAsyncThunk } from '../../app/thunk'
 
 export interface DuplicatesState {
@@ -32,6 +33,19 @@ export interface DuplicatesState {
   /** Warning from "Concat other data" (mixed hash origins, ADR-007). */
   warning: string | null
   error: SerializedError | null
+  /** Probe results per path (`null` = missing or unreadable); drives ordering and hiding. */
+  facts: Record<string, FileFacts | null>
+  probing: boolean
+  /** Which Feedback panel is open, and the text of the export panel. */
+  feedback: 'unreadable' | 'export' | null
+  exportText: string
+}
+
+/** Keeps the active key while it still has groups, else the first key that has some. */
+function keepOrPickKey(current: HashKey | null, rows: HashRow[]): HashKey | null {
+  const counts = keyCounts(rows)
+  if (current !== null && (counts.find((c) => c.key === current)?.groups ?? 0) > 0) return current
+  return counts.find((c) => c.groups > 0)?.key ?? null
 }
 
 const initialState: DuplicatesState = {
@@ -45,7 +59,11 @@ const initialState: DuplicatesState = {
   taskId: null,
   progress: null,
   warning: null,
-  error: null
+  error: null,
+  facts: {},
+  probing: false,
+  feedback: null,
+  exportText: ''
 }
 
 /** Loads a CSV. NOT_FOUND means "not built yet": the screen offers to build it. */
@@ -116,6 +134,22 @@ const duplicatesSlice = createSlice({
       const known = new Set(action.payload.rows.map((row) => row.path))
       state.selectedPaths = state.selectedPaths.filter((p) => known.has(p))
     },
+    factsReceived(state, action: PayloadAction<Record<string, FileFacts | null>>) {
+      Object.assign(state.facts, action.payload)
+    },
+    probingChanged(state, action: PayloadAction<boolean>) {
+      state.probing = action.payload
+    },
+    feedbackOpened(state, action: PayloadAction<{ panel: 'unreadable' | 'export'; text?: string }>) {
+      state.feedback = action.payload.panel
+      if (action.payload.text !== undefined) state.exportText = action.payload.text
+    },
+    feedbackClosed(state) {
+      state.feedback = null
+    },
+    warningSet(state, action: PayloadAction<string | null>) {
+      state.warning = action.payload
+    },
     duplicatesReset() {
       return initialState
     }
@@ -136,6 +170,8 @@ const duplicatesSlice = createSlice({
         state.csvPath = action.payload.csvPath
         state.rows = action.payload.rows
         state.selectedPaths = []
+        state.facts = {}
+        state.activeKey = keepOrPickKey(state.activeKey, action.payload.rows)
       })
       .addCase(loadHashTable.rejected, (state, action) => {
         state.status = 'error'
@@ -168,6 +204,11 @@ export const {
   selectionChanged,
   progressReceived,
   rowsReplaced,
+  factsReceived,
+  probingChanged,
+  feedbackOpened,
+  feedbackClosed,
+  warningSet,
   duplicatesReset
 } = duplicatesSlice.actions
 export default duplicatesSlice.reducer

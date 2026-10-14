@@ -1,8 +1,15 @@
-/** Stub (wave 1). Owner (wave 2): svc-files. Replace `registerStubs` with the real `handle()` calls. */
-import { SESSION_INVOKE_CHANNELS } from '@shared/ipc/channels/session.names'
+/** Session service: `session:open|rescan|close` and the `sessions` slot. */
 import type { MainContext } from '../../ipc/context'
-import { registerStubs } from '../../ipc/stub'
+import { handle } from '../../ipc/handle'
+import { createSessionService } from './store'
 
-export function registerSessionIpc(_ctx: MainContext): void {
-  registerStubs(SESSION_INVOKE_CHANNELS)
+export function registerSessionIpc(ctx: MainContext): void {
+  const service = createSessionService(ctx)
+  ctx.services.provide('sessions', service)
+
+  handle('session:open', (req) => service.open(req))
+  handle('session:rescan', (req) => service.rescan(req.sessionId))
+  handle('session:close', (req) => {
+    service.close(req.sessionId)
+  })
 }

@@ -4,6 +4,7 @@
  * Owner (wave 2): ui-shell (Jobs screen). The reducers here are complete.
  */
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit'
+import type { MediaInfo } from '@shared/domain/media'
 import type {
   EnqueueFilesRequest,
   EnqueueFolderRequest,
@@ -26,6 +27,16 @@ export interface JobItem extends JobSummary {
   durationMs: number | null
 }
 
+/** A video in the drag-and-drop table (research ffmpeg-jobs §11). */
+export interface DropRow {
+  path: string
+  status: 'probing' | 'ready' | 'error'
+  info: MediaInfo | null
+  error: string | null
+  /** A `<video>.json` job file exists (any legacy format); `null` while unknown. */
+  hasJson: boolean | null
+}
+
 export interface JobsState {
   byId: Record<string, JobItem>
   /** Queue order (creation order). */
@@ -34,6 +45,9 @@ export interface JobsState {
   /** Checkboxes of the Jobs screen (DialogResume / ExecuteConfiguratedFiles). */
   options: EnqueueOptionsInput
   tools: ToolsStatus | null
+  /** Folder of the last batch (default `<root>/CUSTOM`); `moviesL` derives the session root from it. */
+  jobsDir: string | null
+  rows: DropRow[]
 }
 
 const initialState: JobsState = {
@@ -41,7 +55,9 @@ const initialState: JobsState = {
   order: [],
   selectedId: null,
   options: {},
-  tools: null
+  tools: null,
+  jobsDir: null,
+  rows: []
 }
 
 function toItem(summary: JobSummary): JobItem {
@@ -179,6 +195,33 @@ const jobsSlice = createSlice({
           break
       }
     },
+    jobsDirChosen(state, action: PayloadAction<string | null>) {
+      state.jobsDir = action.payload
+    },
+    rowsAdded(state, action: PayloadAction<string[]>) {
+      const known = new Set(state.rows.map((row) => row.path))
+      for (const path of action.payload) {
+        if (known.has(path)) continue
+        known.add(path)
+        state.rows.push({ path, status: 'probing', info: null, error: null, hasJson: null })
+      }
+    },
+    rowResolved(
+      state,
+      action: PayloadAction<Pick<DropRow, 'path' | 'info' | 'error' | 'hasJson'>>
+    ) {
+      const row = state.rows.find((r) => r.path === action.payload.path)
+      if (row === undefined) return
+      row.info = action.payload.info
+      row.error = action.payload.error
+      row.hasJson = action.payload.hasJson
+      row.status = action.payload.info === null ? 'error' : 'ready'
+    },
+    /** No payload: clear the table. */
+    rowsRemoved(state, action: PayloadAction<string[] | undefined>) {
+      const gone = action.payload === undefined ? null : new Set(action.payload)
+      state.rows = gone === null ? [] : state.rows.filter((row) => !gone.has(row.path))
+    },
     jobsRemoved(state, action: PayloadAction<string[]>) {
       for (const id of action.payload) delete state.byId[id]
       state.order = state.order.filter((id) => state.byId[id] !== undefined)
@@ -202,5 +245,14 @@ const jobsSlice = createSlice({
   }
 })
 
-export const { jobSelected, optionsChanged, jobEventReceived, jobsRemoved } = jobsSlice.actions
+export const {
+  jobSelected,
+  optionsChanged,
+  jobEventReceived,
+  jobsRemoved,
+  jobsDirChosen,
+  rowsAdded,
+  rowResolved,
+  rowsRemoved
+} = jobsSlice.actions
 export default jobsSlice.reducer

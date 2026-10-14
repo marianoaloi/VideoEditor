@@ -11,7 +11,11 @@ import type { PlayerMode } from '../../components/MediaPlayer/types'
 
 export type { PlayerMode }
 
-export const SPEEDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const
+/** Keys `1`-`5` (video-triage.md §3): 1, 2.5, 5, 7.5, 10. `Ctrl+1`-`5`: 1.25, 1.5, 1.75, 2, 2.25. */
+export const SPEEDS = [1, 2.5, 5, 7.5, 10] as const
+export const CTRL_SPEEDS = [1.25, 1.5, 1.75, 2, 2.25] as const
+export const MIN_SPEED = 0.25
+export const MAX_SPEED = 10
 
 export interface PlayerState {
   path: string | null
@@ -21,7 +25,7 @@ export interface PlayerState {
   positionMs: number
   durationMs: number
   playing: boolean
-  /** 1..10 (keys 1-5, Ctrl+1-5). */
+  /** 0.25..10 (keys 1-5, Ctrl+1-5). Survives item changes. */
   speed: number
   volume: number
   muted: boolean
@@ -72,7 +76,7 @@ const playerSlice = createSlice({
       state.playing = action.payload
     },
     speedSet(state, action: PayloadAction<number>) {
-      state.speed = clamp(Math.round(action.payload), 1, 10)
+      state.speed = clamp(action.payload, MIN_SPEED, MAX_SPEED)
     },
     volumeSet(state, action: PayloadAction<number>) {
       state.volume = clamp(action.payload, 0, 1)
