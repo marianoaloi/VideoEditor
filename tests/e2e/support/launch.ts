@@ -111,8 +111,14 @@ export async function launchApp(): Promise<E2eApp> {
         ).dialogNext = p
       }, path),
     async approveFolder(dir) {
-      await this.stubDirectoryDialog(dir)
-      await this.call('app:openDirectoryDialog', {})
+      await app.evaluate((_e, p) => {
+        ;(
+          (globalThis as Record<string, unknown>)['__e2e'] as { dialogNext: string | null }
+        ).dialogNext = p
+      }, dir)
+      const reply = await invoke('app:openDirectoryDialog', {})
+      if (!reply.ok)
+        throw new Error(`approveFolder ${dir}: ${reply.error.code} ${reply.error.message}`)
     },
     trashed: () =>
       app.evaluate(
