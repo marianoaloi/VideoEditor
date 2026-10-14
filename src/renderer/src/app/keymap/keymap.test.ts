@@ -32,6 +32,17 @@ describe('eventToChord', () => {
     expect(eventToChord(ev({ key: '+', code: 'NumpadAdd' }))).toBe('Plus')
     expect(eventToChord(ev({ key: '-', code: 'Minus' }))).toBe('Minus')
   })
+  it('names every Ctrl zoom variant (US, Brazilian, Italian, numpad) as Ctrl+Plus / Ctrl+Minus', () => {
+    expect(eventToChord(ev({ key: '+', code: 'Equal', ctrlKey: true, shiftKey: true }))).toBe('Ctrl+Plus')
+    expect(eventToChord(ev({ key: '=', code: 'Equal', ctrlKey: true }))).toBe('Ctrl+Plus')
+    expect(eventToChord(ev({ key: '+', code: 'BracketRight', ctrlKey: true }))).toBe('Ctrl+Plus')
+    expect(eventToChord(ev({ key: '+', code: 'NumpadAdd', ctrlKey: true }))).toBe('Ctrl+Plus')
+    expect(eventToChord(ev({ key: '-', code: 'Minus', ctrlKey: true }))).toBe('Ctrl+Minus')
+    expect(eventToChord(ev({ key: '-', code: 'NumpadSubtract', ctrlKey: true }))).toBe('Ctrl+Minus')
+    expect(eventToChord(ev({ key: '0', code: 'Digit0', ctrlKey: true }))).toBe('Ctrl+0')
+    expect(eventToChord(ev({ key: '0', code: 'Numpad0', ctrlKey: true }))).toBe('Ctrl+0')
+    expect(eventToChord(ev({ key: '=', code: 'Equal' }))).toBeNull()
+  })
   it('names special keys and function keys', () => {
     expect(eventToChord(ev({ key: 'ArrowUp' }))).toBe('ArrowUp')
     expect(eventToChord(ev({ key: ' ', code: 'Space' }))).toBe('Space')

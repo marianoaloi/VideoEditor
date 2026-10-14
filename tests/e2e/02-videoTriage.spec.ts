@@ -151,6 +151,67 @@ test('SPEC 6.5: C with no ranges writes times=[[low,high]] and moves the video t
   expect(high).toBeGreaterThan(low)
 })
 
+const badge = () => e2e.page.getByTestId('zoom-badge')
+const pageZoomFactor = () =>
+  e2e.app.evaluate(({ webContents }) => webContents.getAllWebContents()[0]!.getZoomFactor())
+
+async function expectZoomChords(): Promise<void> {
+  await expect(badge()).toHaveCount(0) // 100 %: no badge
+  await press('Control+Equal') // Ctrl and the unshifted '+' key
+  await expect(badge()).toHaveText('125 %')
+  await press('Control+Shift+Equal') // Ctrl+Shift+'+' (key '+')
+  await expect(badge()).toHaveText('156 %')
+  await press('Control+Minus')
+  await expect(badge()).toHaveText('125 %')
+  await press('Control+Digit0')
+  await expect(badge()).toHaveCount(0)
+  await press('Control+Equal')
+  await press('Control+Equal')
+  await expect(badge()).toHaveText('156 %')
+  // Chromium's own page zoom must never kick in.
+  expect(await pageZoomFactor()).toBe(1)
+  await press('Control+Digit0')
+}
+
+test('Ctrl+Plus / Ctrl+Minus / Ctrl+0 zoom the video in Video Triage, not the page', async () => {
+  await expect
+    .poll(() => e2e.page.evaluate(() => document.querySelector('video')?.readyState ?? 0))
+    .toBeGreaterThanOrEqual(1)
+  await expectZoomChords()
+  // Plain Minus is still the volume key and must not zoom.
+  await press('Minus')
+  await expect(badge()).toHaveCount(0)
+})
+
+test('PageDown moves the current video to CUSTOM and opens it in the Cutter (no job file written)', async () => {
+  const text = (await label().textContent()) ?? ''
+  const target = names.find((n) => !files('CUSTOM').includes(n) && text.includes(n))
+  expect(target, text).toBeDefined()
+  await expect
+    .poll(() => e2e.page.evaluate(() => document.querySelector('video')?.readyState ?? 0))
+    .toBeGreaterThanOrEqual(1)
+  await press('PageDown')
+  await expect.poll(() => files('CUSTOM'), { timeout: 15_000 }).toContain(target!)
+  expect(existsSync(join(dir, target!))).toBe(false) // moved, not copied
+  expect(existsSync(join(dir, 'CUSTOM', `${target}.json`))).toBe(false) // the Cutter writes it on save
+  await expect(
+    e2e.page.getByRole('navigation', { name: 'Workspaces' }).getByRole('button', { name: 'Cutter' })
+  ).toHaveAttribute('aria-current', 'page', { timeout: 15_000 })
+  await expect(e2e.page.locator('body')).toContainText(target!, { timeout: 15_000 })
+})
+
+test('the same zoom chords work in the Cutter after PageDown opened the file there', async () => {
+  await expect(
+    e2e.page.getByRole('navigation', { name: 'Workspaces' }).getByRole('button', { name: 'Cutter' })
+  ).toHaveAttribute('aria-current', 'page')
+  await expect
+    .poll(() => e2e.page.evaluate(() => document.querySelector('video')?.readyState ?? 0), {
+      timeout: 20_000
+    })
+    .toBeGreaterThanOrEqual(1)
+  await expectZoomChords()
+})
+
 test('no console errors during the Video Triage flow', () => {
   expect(e2e.consoleErrors).toEqual([])
 })

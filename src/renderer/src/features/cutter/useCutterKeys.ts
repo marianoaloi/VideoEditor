@@ -2,10 +2,12 @@ import { ProcessingMode } from '@shared/domain/job'
 import { useKeymap } from '../../app/keymap/useKeymap'
 import type { KeyBinding } from '../../app/keymap/types'
 import { SEEK_KEY_SPECS } from './cutterMath'
+import type { ZoomControls } from '../../app/player/usePlayerZoom'
 import type { CutterActions } from './useCutterActions'
 
 interface CutterKeyHandlers {
   actions: CutterActions
+  zoom: Pick<ZoomControls, 'zoomIn' | 'zoomOut' | 'zoomReset'>
   openCrop: () => void
   requestClose: () => void
   /** The scope is live while this is true (a video is shown and no dialog is open). */
@@ -23,7 +25,7 @@ function seekBindings(actions: CutterActions): KeyBinding[] {
 }
 
 /** The `cutter` keymap scope (MyVideos shortcuts; plain letters never fire inside text fields). */
-export function useCutterKeys({ actions, openCrop, requestClose, enabled }: CutterKeyHandlers): void {
+export function useCutterKeys({ actions, zoom, openCrop, requestClose, enabled }: CutterKeyHandlers): void {
   const bindings: KeyBinding[] = [
     ...seekBindings(actions),
     { id: 'cutter.play', keys: ['S'], description: 'Play / pause', run: actions.togglePlay },
@@ -72,6 +74,9 @@ export function useCutterKeys({ actions, openCrop, requestClose, enabled }: Cutt
     { id: 'cutter.open', keys: ['Ctrl+O'], description: 'Open a video', run: () => void actions.openDialog() },
     { id: 'cutter.save', keys: ['Ctrl+S'], description: 'Save the job (times)', run: () => void actions.save() },
     { id: 'cutter.loadTimes', keys: ['Ctrl+Shift+O'], description: 'Load the saved times', run: () => void actions.loadTimes() },
+    { id: 'cutter.zoomIn', keys: ['Ctrl+Plus'], description: 'Zoom in', allowRepeat: true, run: zoom.zoomIn },
+    { id: 'cutter.zoomOut', keys: ['Ctrl+Minus'], description: 'Zoom out', allowRepeat: true, run: zoom.zoomOut },
+    { id: 'cutter.zoomReset', keys: ['Ctrl+0'], description: 'Reset zoom', run: zoom.zoomReset },
     { id: 'cutter.close', keys: ['Escape'], description: 'Close the Cutter', run: requestClose }
   ]
   useKeymap('cutter', bindings, { enabled })

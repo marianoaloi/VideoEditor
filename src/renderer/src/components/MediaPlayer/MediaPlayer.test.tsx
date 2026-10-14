@@ -96,6 +96,45 @@ describe('MediaPlayer source choice (ADR-004)', () => {
     fireEvent.error(video(container))
     expect(onError).toHaveBeenCalledTimes(1)
   })
+
+  it('the error comes with a log: element error, mode, source and the probe summary', () => {
+    const onError = vi.fn()
+    const { container } = render(<MediaPlayer {...props({ onError })} />)
+    const el = video(container)
+    // The first error switches to the transcode stream, the second one is final.
+    Object.defineProperty(el, 'error', {
+      value: { code: 3, message: 'PIPELINE_ERROR_DECODE' },
+      configurable: true
+    })
+    fireEvent.error(el)
+    expect(onError).not.toHaveBeenCalled()
+    fireEvent.error(el)
+
+    expect(onError).toHaveBeenCalledTimes(1)
+    const [message, log] = onError.mock.calls[0] as [string, string]
+    expect(message).toBe('PIPELINE_ERROR_DECODE')
+    expect(log).toContain('Playback failed')
+    expect(log).toContain(`File: ${PATH}`)
+    expect(log).toContain('Player mode: transcode')
+    expect(log).toContain('Transcode fallback tried: yes, and it failed too')
+    expect(log).toContain('Element error: MEDIA_ERR_DECODE')
+    expect(log).toContain('Element message: PIPELINE_ERROR_DECODE')
+    expect(log).toContain('Video codec: h264')
+    expect(log).toContain('Size: 640x360')
+  })
+
+  it('the log still reads well without a probe result and without an element error', () => {
+    const onError = vi.fn()
+    const { container } = render(
+      <MediaPlayer {...props({ onError, info: null, forceTranscode: true })} />
+    )
+    fireEvent.error(video(container))
+    const [message, log] = onError.mock.calls[0] as [string, string]
+    expect(message).toBe('The video could not be played')
+    expect(log).toContain('Probe result: not available')
+    expect(log).toContain('Forced transcode: yes')
+    expect(log).not.toContain('Element error')
+  })
 })
 
 describe('MediaPlayer timeline and handle', () => {
@@ -130,7 +169,9 @@ describe('MediaPlayer timeline and handle', () => {
 
   it('applies speed and volume after metadata loads and reports the duration', () => {
     const onDuration = vi.fn()
-    const { container } = render(<MediaPlayer {...props({ speed: 2.5, volume: 0.3, onDuration })} />)
+    const { container } = render(
+      <MediaPlayer {...props({ speed: 2.5, volume: 0.3, onDuration })} />
+    )
     const el = video(container)
     fireEvent.loadedMetadata(el)
     expect(el.playbackRate).toBe(2.5)
@@ -146,5 +187,38 @@ describe('MediaPlayer timeline and handle', () => {
     expect(HTMLMediaElement.prototype.play).toHaveBeenCalled()
     fireEvent.wheel(el, { deltaY: -100 })
     expect(onWheel).toHaveBeenCalledTimes(1)
+  })
+
+  describe('zoom', () => {
+    it('applies the transform and shows the badge only when zoomed', () => {
+      const { container, queryByTestId, rerender } = render(<MediaPlayer {...props()} />)
+      expect(video(container).style.transform).toBe('')
+      expect(queryByTestId('zoom-badge')).toBeNull()
+      rerender(<MediaPlayer {...props({ zoom: 2.5, pan: { x: 0.25, y: -0.5 } })} />)
+      expect(video(container).style.transform).toBe('translate(25%, -50%) scale(2.5)')
+      expect(queryByTestId('zoom-badge')).toHaveTextContent('250 %')
+    })
+
+    it('clamps a pan that would leave gutters', () => {
+      const { container } = render(<MediaPlayer {...props({ zoom: 2, pan: { x: 5, y: -5 } })} />)
+      expect(video(container).style.transform).toBe('translate(50%, -50%) scale(2)')
+    })
+
+    it('drags to pan with clamped fractions, and not at zoom 1', () => {
+      const onPanChange = vi.fn()
+      const { getByTestId, rerender } = render(<MediaPlayer {...props({ onPanChange })} />)
+      const box = getByTestId('player-zoom-box')
+      vi.spyOn(box, 'getBoundingClientRect').mockReturnValue({ width: 400, height: 200 } as DOMRect)
+      fireEvent.pointerDown(box, { button: 0, clientX: 100, clientY: 100 })
+      fireEvent.pointerMove(box, { clientX: 140, clientY: 100 })
+      expect(onPanChange).not.toHaveBeenCalled()
+      rerender(<MediaPlayer {...props({ onPanChange, zoom: 2 })} />)
+      fireEvent.pointerDown(box, { button: 0, clientX: 100, clientY: 100 })
+      fireEvent.pointerMove(box, { clientX: 140, clientY: 120 })
+      expect(onPanChange).toHaveBeenLastCalledWith({ x: 0.1, y: 0.1 })
+      fireEvent.pointerUp(box)
+      fireEvent.pointerMove(box, { clientX: 300, clientY: 120 })
+      expect(onPanChange).toHaveBeenCalledTimes(1)
+    })
   })
 })

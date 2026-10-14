@@ -5,10 +5,14 @@ import type { IpcResult } from '@shared/domain/errors'
 import type { JournalEntry } from '@shared/domain/fileops'
 import type { MediaInfo } from '@shared/domain/media'
 import type { Session } from '@shared/domain/session'
+import { DEFAULT_SETTINGS } from '@shared/domain/settings'
 import type { InvokeChannel, RendererApi } from '@shared/ipc/contract'
 import { setBridge } from '../../app/api'
-import { allHandlers, clearHandlers } from '../../app/keymap/registry'
+import { findConflicts } from '../../app/keymap/conflicts'
+import { allHandlers, clearHandlers, resolveBinding } from '../../app/keymap/registry'
+import { panChanged } from '../../app/player/playerSlice'
 import { createAppStore } from '../../app/store'
+import { settingsReceived } from '../settings/settingsSlice'
 import VideoTriageScreen from './VideoTriageScreen'
 import { handlesSet, sessionOpened, videoTriageThunks } from './videoTriageSlice'
 
@@ -207,6 +211,157 @@ describe('Video Triage screen', () => {
     })
   })
 
+  it('PageDown moves the video to CUSTOM and opens that file in the Cutter, without writing a job', async () => {
+    const store = await mount()
+    press('videoTriage.sendToCutter')
+    await waitFor(() => expect(store.getState().cutter.videoPath).toBe('/in/CUSTOM/v0.mp4'))
+    const move = calls.find((c) => c.channel === 'fileops:move')
+    expect(move?.request).toMatchObject({ destination: { type: 'role', role: 'custom' } })
+    expect(channelsCalled()).not.toContain('jobs:saveJob')
+    expect(store.getState().keymap.activeWorkspace).toBe('cutter')
+    expect(store.getState().cutter.origin).toBe('triage')
+    // Triage carries on with the next video, and the move is an ordinary decision.
+    expect(store.getState().videoTriage.cursor).toBe(1)
+  })
+
+  it('PageDown is a normal decision: B moves the video back', async () => {
+    const store = await mount()
+    handlers['fileops:undo'] = () => ({
+      ok: true,
+      data: {
+        undone: entry('e', '/in/v0.mp4', '/in/CUSTOM/v0.mp4'),
+        compensating: entry('c', '/in/CUSTOM/v0.mp4', '/in/v0.mp4'),
+        restoredPath: '/in/v0.mp4',
+        item: null
+      }
+    })
+    press('videoTriage.sendToCutter')
+    await waitFor(() => expect(store.getState().cutter.videoPath).toBe('/in/CUSTOM/v0.mp4'))
+    press('videoTriage.undo')
+    await waitFor(() => expect(channelsCalled()).toContain('fileops:undo'))
+    await waitFor(() => expect(store.getState().videoTriage.cursor).toBe(0))
+  })
+
+  it('a video with a <video>.json is set up from it: ranges, concat, size/crop overrides, convert, notice', async () => {
+    handlers['jobs:readJob'] = () => ({
+      ok: true,
+      data: {
+        found: true,
+        format: 'v2',
+        warnings: [],
+        job: {
+          version: 2,
+          filename: '/in/v0.mp4',
+          originalPath: '/in/v0.mp4',
+          crop: { x: 10, y: 20, w: 300, h: 200 },
+          bright: null,
+          contrast: null,
+          transpose: null,
+          mediaPath: null,
+          convert: true,
+          size: '640x360',
+          rate: 800,
+          avgrate: null,
+          times: [
+            [1_000, 5_000],
+            [9_000, 12_000]
+          ],
+          posExecution: 2
+        }
+      }
+    })
+    const store = await mount()
+    await waitFor(() => expect(store.getState().videoTriage.draft.ranges).toHaveLength(2))
+    const { draft } = store.getState().videoTriage
+    expect(draft.ranges).toEqual([
+      [1_000, 5_000],
+      [9_000, 12_000]
+    ])
+    expect(draft.posExecution).toBe(2)
+    expect(draft.convert).toBe(true)
+    expect(draft.overrides).toMatchObject({
+      size: '640x360',
+      rate: 800,
+      crop: { x: 10, y: 20, w: 300, h: 200 }
+    })
+    expect(JSON.stringify(store.getState().notifications)).toContain(
+      'Loaded v0.mp4.json: 2 ranges, concat, crop, size 640x360, 800 kbit/s, convert first'
+    )
+  })
+
+  describe('a video ffprobe cannot read', () => {
+    const PROBE_ERROR = {
+      ok: false as const,
+      error: {
+        code: 'PROBE_FAILED' as const,
+        message: 'Invalid data found when processing input',
+        details: { path: '/in/v0.mp4', exitCode: 1 }
+      }
+    }
+    const failOnFirst = (): void => {
+      const healthy = handlers['media:probe']!
+      handlers['media:probe'] = (r) =>
+        (r as { path: string }).path === '/in/v0.mp4' ? PROBE_ERROR : healthy(r)
+    }
+    const mountWithoutWaiting = (errorMoveR: boolean) => {
+      const store = createAppStore()
+      store.dispatch(
+        settingsReceived({ ...DEFAULT_SETTINGS, videoTriage: { analyse: true, errorMoveR } })
+      )
+      render(
+        <Provider store={store}>
+          <VideoTriageScreen />
+        </Provider>
+      )
+      act(() => {
+        store.dispatch(sessionOpened(session))
+      })
+      return store
+    }
+
+    it('with "Error move R" off: an error toast with the log, and the file stays', async () => {
+      failOnFirst()
+      const store = mountWithoutWaiting(false)
+      await waitFor(() => expect(store.getState().notifications.queue).toHaveLength(1))
+      const toast = store.getState().notifications.queue[0]!
+      expect(toast.severity).toBe('error')
+      expect(toast.message).toBe('Cannot read v0.mp4')
+      expect(toast.detail).toBe('Invalid data found when processing input')
+      expect(toast.autoHideMs).toBeNull()
+      expect(toast.log).toContain('File: /in/v0.mp4')
+      expect(toast.log).toContain('Error code: PROBE_FAILED')
+      expect(toast.log).toContain('"exitCode": 1')
+      expect(channelsCalled()).not.toContain('fileops:move')
+      // The same failure does not toast again on re-render.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      })
+      expect(store.getState().notifications.queue).toHaveLength(1)
+    })
+
+    it('with "Error move R" on: moved to R, ONE summary toast whose log lists the file', async () => {
+      failOnFirst()
+      const store = mountWithoutWaiting(true)
+      await waitFor(() => expect(channelsCalled()).toContain('fileops:move'))
+      expect(calls.find((c) => c.channel === 'fileops:move')?.request).toMatchObject({
+        destination: { type: 'role', role: 'right' }
+      })
+      await waitFor(() => expect(store.getState().notifications.queue).toHaveLength(1))
+      const toast = store.getState().notifications.queue[0]!
+      expect(toast.message).toBe('1 unreadable file moved to R')
+      expect(toast.log).toContain('File: /in/v0.mp4')
+      expect(toast.log).toContain('Invalid data found when processing input')
+    })
+  })
+
+  it('a video without a sidecar keeps the default cut mode and no notice', async () => {
+    const store = await mount()
+    const { draft } = store.getState().videoTriage
+    expect(draft.ranges).toEqual([])
+    expect(draft.posExecution).toBe(1)
+    expect(JSON.stringify(store.getState().notifications)).not.toContain('Loaded')
+  })
+
   it('M1: a failed job write undoes THIS move by entry id, not whatever was decided last', async () => {
     const store = await mount()
     act(() => {
@@ -219,7 +374,11 @@ describe('Video Triage screen', () => {
     }
     handlers['fileops:undo'] = () => ({
       ok: true,
-      data: { entry: entry('u1', '/in/CUSTOM/v0.mp4', '/in/v0.mp4'), restoredPath: '/in/v0.mp4', item: null }
+      data: {
+        entry: entry('u1', '/in/CUSTOM/v0.mp4', '/in/v0.mp4'),
+        restoredPath: '/in/v0.mp4',
+        item: null
+      }
     })
     press('videoTriage.cut')
     await waitFor(() => expect(channelsCalled()).toContain('fileops:undo'))
@@ -322,8 +481,70 @@ describe('Video Triage screen', () => {
     const mine = allHandlers().filter((b) => b.scope === 'videoTriage')
     const chords = mine.flatMap((b) => b.keys)
     expect(new Set(chords).size).toBe(chords.length)
-    for (const chord of ['A', 'F', 'D', 'B', 'Shift+Delete', 'P', 'X', 'C', 'V', 'Z', 'S', '6', 'Plus', 'F8', 'PageUp']) {
+    for (const chord of [
+      'A',
+      'F',
+      'D',
+      'B',
+      'Shift+Delete',
+      'P',
+      'X',
+      'C',
+      'V',
+      'Z',
+      'S',
+      '6',
+      'Plus',
+      'F8',
+      'PageUp',
+      'PageDown'
+    ]) {
       expect(chords, chord).toContain(chord)
     }
+  })
+
+  it('zoom chords: registered once, update the slice, and Ctrl+Plus never fires the plain Plus binding', async () => {
+    const store = await mount()
+    const chords = allHandlers()
+      .filter((b) => b.scope === 'videoTriage')
+      .flatMap((b) => b.keys)
+    for (const chord of ['Ctrl+Plus', 'Ctrl+Minus', 'Ctrl+0']) {
+      expect(chords.filter((c) => c === chord)).toHaveLength(1)
+    }
+    expect(
+      findConflicts(
+        allHandlers().map((b) => ({
+          id: b.id,
+          keys: [...b.keys],
+          description: b.description,
+          scope: b.scope
+        }))
+      )
+    ).toEqual([])
+    const state = { activeWorkspace: 'videoTriage' as const, modalStack: [] }
+    const info = { repeat: false, inInput: false }
+    expect(resolveBinding('Ctrl+Plus', state, info)?.id).toBe('videoTriage.zoomIn')
+    expect(resolveBinding('Plus', state, info)?.id).toBe('videoTriage.externalPlayer')
+    expect(resolveBinding('Ctrl+Minus', state, { repeat: true, inInput: false })?.id).toBe(
+      'videoTriage.zoomOut'
+    )
+    press('videoTriage.zoomIn')
+    press('videoTriage.zoomIn')
+    expect(store.getState().player.zoom).toBe(1.5625)
+    press('videoTriage.zoomOut')
+    expect(store.getState().player.zoom).toBe(1.25)
+    press('videoTriage.zoomReset')
+    expect(store.getState().player.zoom).toBe(1)
+    expect(channelsCalled()).not.toContain('app:openExternal')
+  })
+
+  it('zoom and pan survive moving to the next video', async () => {
+    const store = await mount()
+    press('videoTriage.zoomIn')
+    press('videoTriage.zoomIn')
+    store.dispatch(panChanged({ x: 0.1, y: -0.1 }))
+    press('videoTriage.skip')
+    await waitFor(() => expect(store.getState().videoTriage.cursor).toBe(1))
+    expect(store.getState().player).toMatchObject({ zoom: 1.5625, panX: 0.1, panY: -0.1 })
   })
 })

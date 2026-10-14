@@ -92,7 +92,7 @@ function SectionForm({
   onChange: (path: readonly string[], value: unknown) => void
 }) {
   return (
-    <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
+    <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' , marginTop: 1}}>
       {fields.map((def) => (
         <FieldControl
           key={def.path.join('.')}

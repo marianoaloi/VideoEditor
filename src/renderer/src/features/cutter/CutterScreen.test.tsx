@@ -8,6 +8,7 @@ import type { MediaInfo } from '@shared/domain/media'
 import { DEFAULT_SETTINGS } from '@shared/domain/settings'
 import type { InvokeChannel, RendererApi } from '@shared/ipc/contract'
 import { setBridge } from '../../app/api'
+import { findConflicts } from '../../app/keymap/conflicts'
 import { allHandlers, clearHandlers } from '../../app/keymap/registry'
 import { workspaceActivated } from '../../app/keymap/keymapSlice'
 import { createAppStore } from '../../app/store'
@@ -349,5 +350,22 @@ describe('Cutter workspace', () => {
     const chords = allHandlers().filter((b) => b.scope === 'cutter').flatMap((b) => b.keys)
     expect(chords).not.toContain('Ctrl+Shift+A')
     expect(new Set(chords).size).toBe(chords.length)
+  })
+
+  it('zoom chords are registered once and drive the shared player slice', async () => {
+    const { store } = setup()
+    await openVideo(store)
+    const chords = allHandlers().filter((b) => b.scope === 'cutter').flatMap((b) => b.keys)
+    for (const chord of ['Ctrl+Plus', 'Ctrl+Minus', 'Ctrl+0']) {
+      expect(chords.filter((c) => c === chord)).toHaveLength(1)
+    }
+    expect(findConflicts(allHandlers().map((b) => ({ id: b.id, keys: [...b.keys], description: b.description, scope: b.scope })))).toEqual([])
+    press('cutter.zoomIn')
+    press('cutter.zoomIn')
+    expect(store.getState().player.zoom).toBe(1.5625)
+    press('cutter.zoomOut')
+    expect(store.getState().player.zoom).toBe(1.25)
+    press('cutter.zoomReset')
+    expect(store.getState().player.zoom).toBe(1)
   })
 })

@@ -1,0 +1,146 @@
+name: Release
+
+# Builds the Windows installer and the Linux AppImage when a pull request is merged into main
+# (a merge is a push to main), then publishes them as one GitHub Release.
+# Can also be started by hand from the Actions tab.
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+# Two merges in a row must not publish at the same time.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Typecheck, lint, test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      # Some tests render real media with ffmpeg and skip themselves when it is missing.
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      # Not blocking yet: the suite was written and run on Windows. Remove `continue-on-error`
+      # once it is green on Linux, so a failing test stops the release.
+      - name: Unit tests
+        run: npm test
+        continue-on-error: true
+
+  build:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            builder: --win
+            artifacts: '*.exe'
+          - os: ubuntu-latest
+            builder: --linux
+            artifacts: '*.AppImage'
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build app bundles
+        run: npm run build
+
+      # `--publish never`: electron-builder must not try to publish on its own in CI.
+      - name: Package installer
+        run: npx electron-builder ${{ matrix.builder }} --publish never
+        env:
+          CI: false
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Stage release artifacts
+        shell: bash
+        run: |
+          mkdir -p release-artifacts
+          find release -maxdepth 1 -type f -name '${{ matrix.artifacts }}' \
+            -exec cp {} release-artifacts/ \;
+          if [ -z "$(ls -A release-artifacts)" ]; then
+            echo "No installable artifact produced for ${{ matrix.os }}"
+            exit 1
+          fi
+          ls -lh release-artifacts
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.os }}
+          path: release-artifacts/
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get package version
+        id: pkg
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: release-artifacts
+
+      - name: List collected artifacts
+        run: ls -lh release-artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.pkg.outputs.version }}-${{ github.run_number }}
+          name: VideoEditor v${{ steps.pkg.outputs.version }} (build ${{ github.run_number }})
+          generate_release_notes: true
+          body: |
+            Automated Windows and Linux release from a merge into main.
+            Windows: run the `-setup.exe` installer. Linux: make the `.AppImage` executable and run it.
+            ffmpeg and ffprobe must be installed and on PATH (or set in Settings).
+            Commit: ${{ github.sha }}
+          files: release-artifacts/*
+          fail_on_unmatched_files: true

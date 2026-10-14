@@ -7,6 +7,7 @@
  * `positionMs = transcodeOffsetMs + currentTime * 1000`; range handles and job times use it.
  */
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit'
+import { clampPan, clampZoom, rescalePan, type Pan } from '@shared/core/videoZoom'
 import type { PlayerMode } from '../../components/MediaPlayer/types'
 
 export type { PlayerMode }
@@ -31,6 +32,11 @@ export interface PlayerState {
   muted: boolean
   /** Last decode / load error of the current file (the player already tried the fallback). */
   error: string | null
+  /** 1..8 visual zoom of the picture; shared by both workspaces, never persisted. */
+  zoom: number
+  /** Pan as a fraction of the player box (see `videoZoom`). */
+  panX: number
+  panY: number
 }
 
 const initialState: PlayerState = {
@@ -43,7 +49,10 @@ const initialState: PlayerState = {
   speed: 1,
   volume: 0.5,
   muted: false,
-  error: null
+  error: null,
+  zoom: 1,
+  panX: 0,
+  panY: 0
 }
 
 const clamp = (value: number, min: number, max: number): number =>
@@ -97,6 +106,24 @@ const playerSlice = createSlice({
       state.transcodeOffsetMs = Math.max(0, Math.round(action.payload.offsetMs))
       state.positionMs = state.transcodeOffsetMs
     },
+    /** Sets the zoom (clamped 1..8), keeping the picture centre. */
+    zoomChanged(state, action: PayloadAction<number>) {
+      const next = clampZoom(action.payload)
+      const pan = rescalePan({ x: state.panX, y: state.panY }, state.zoom, next)
+      state.zoom = next
+      state.panX = pan.x
+      state.panY = pan.y
+    },
+    panChanged(state, action: PayloadAction<Pan>) {
+      const pan = clampPan(action.payload, state.zoom)
+      state.panX = pan.x
+      state.panY = pan.y
+    },
+    zoomReset(state) {
+      state.zoom = 1
+      state.panX = 0
+      state.panY = 0
+    },
     playerFailed(state, action: PayloadAction<string>) {
       state.error = action.payload
       state.playing = false
@@ -114,6 +141,9 @@ export const {
   muteToggled,
   transcodeStarted,
   transcodeSeeked,
+  zoomChanged,
+  panChanged,
+  zoomReset,
   playerFailed
 } = playerSlice.actions
 export default playerSlice.reducer

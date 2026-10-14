@@ -8,13 +8,7 @@ import Button from '@mui/material/Button'
 import LinearProgress from '@mui/material/LinearProgress'
 import Typography from '@mui/material/Typography'
 import {
-  dragHandle,
-  jumpToEnd,
-  jumpToStart,
-  loadRangeIntoHandles,
-  rangeFromHandles,
-  selectionMs,
-  swapActive
+  dragHandle, jumpToEnd, jumpToStart, loadRangeIntoHandles, rangeFromHandles, selectionMs, swapActive
 } from '@shared/core/jobDraft'
 import { collectDroppedPaths } from '../../app/dropFiles'
 import {
@@ -37,13 +31,9 @@ import { workspaceActivated } from '../../app/keymap/keymapSlice'
 import { fetchMediaInfo, prefetchMedia } from '../../app/mediaInfo/mediaInfoSlice'
 import { notify, notifyApiError } from '../../app/notifications/notify'
 import {
-  durationChanged,
-  fileOpened,
-  playingChanged,
-  positionChanged,
-  speedSet,
-  volumeSet
+  durationChanged, fileOpened, playingChanged, positionChanged, speedSet, volumeSet
 } from '../../app/player/playerSlice'
+import { usePlayerZoom } from '../../app/player/usePlayerZoom'
 import { countByStatus, currentItem, isEnd } from '../../app/triage/triageCore'
 import CropDialog from '../../components/CropDialog'
 import InfoBar from '../../components/InfoBar/InfoBar'
@@ -62,9 +52,11 @@ import {
   executeCustomFolder,
   openExternalPlayer,
   openPreviousInCutter,
+  sendToCutter,
   saveTime,
   sendJob
 } from './videoTriageThunks'
+import { useProbeFailures } from './useProbeFailures'
 import { findFirstMatch, itemLabel, upcomingItems } from './videoTriageHelpers'
 import {
   convertToggled,
@@ -90,15 +82,16 @@ export default function VideoTriageScreen() {
   const vt = useAppSelector(selectVideoTriage)
   const settings = useAppSelector((s) => s.settings.value) ?? DEFAULT_SETTINGS
   const player = useAppSelector((s) => s.player)
+  const zoom = usePlayerZoom()
   const item = currentItem(vt)
   const entry = useAppSelector((s) => (item === null ? undefined : s.mediaInfo.byPath[item.path]))
   const info = entry?.status === 'ready' ? entry.info : null
-  const probeError = entry?.status === 'error' ? entry.error.message : null
+  const probeFailure = entry?.status === 'error' ? entry.error : null
+  const probeError = probeFailure === null ? null : probeFailure.message
   const analyse = settings.videoTriage.analyse
   const playerRef = useRef<MediaPlayerHandle>(null)
   const wheelAcc = useRef<WheelAccumulator>({ remainder: 0 })
   const restoreRef = useRef<{ low: number; high: number; active: 0 | 1 | -1 } | null>(null)
-  const unreadable = useRef(0)
   const firstLoad = useRef(true)
   const [findError, setFindError] = useState<string | null>(null)
   const durationMs = info?.durationMs ?? player.durationMs
@@ -135,16 +128,14 @@ export default function VideoTriageScreen() {
     if (analyse && next.length > 0) void dispatch(prefetchMedia(next))
   }, [dispatch, vt.items, vt.cursor, prefetchCount, analyse])
 
-  // "Error move R": unreadable files go straight to R, one summary toast (§2).
-  useEffect(() => {
-    if (itemPath !== null && probeError !== null && settings.videoTriage.errorMoveR) {
-      unreadable.current += 1
-      void dispatch(videoTriageThunks.moveItem({ kind: 'right' }))
-    } else if (unreadable.current > 0 && (info !== null || isEnd(vt))) {
-      dispatch(notify('info', `${unreadable.current} unreadable files moved to R`))
-      unreadable.current = 0
-    }
-  }, [dispatch, itemPath, probeError, info, vt, settings.videoTriage.errorMoveR])
+  // Unreadable videos: moved to R with one summary toast, or an error toast; both carry a log icon.
+  useProbeFailures({
+    itemPath,
+    failure: probeFailure,
+    ready: info !== null,
+    atEnd: isEnd(vt),
+    errorMoveR: settings.videoTriage.errorMoveR
+  })
 
   // ---- actions --------------------------------------------------------------------------
   const setHandles = (move: { handles: typeof handles; seekMs: number | null }): void => {
@@ -165,6 +156,7 @@ export default function VideoTriageScreen() {
     }
   }
   const openDir = async (dir: string): Promise<void> => {
+    zoom.zoomReset()
     if (vt.sessionId !== null) await dispatch(videoTriageThunks.closeFolder())
     await dispatch(
       videoTriageThunks.openFolder({
@@ -180,7 +172,11 @@ export default function VideoTriageScreen() {
   }
   const seekBy = (key: Pick<SeekKey, 'nominalSec'>, mods: ModifierState, dir: 1 | -1): void => {
     const delta = seekDeltaMs(key.nominalSec, mods, dir)
-    const target = clampSeekTarget(playerRef.current?.getPositionMs() ?? player.positionMs, delta, maxMs)
+    const target = clampSeekTarget(
+      playerRef.current?.getPositionMs() ?? player.positionMs,
+      delta,
+      maxMs
+    )
     if (target !== null) seek(target)
   }
 
@@ -206,6 +202,10 @@ export default function VideoTriageScreen() {
     handlesToEnd: () => setHandles(jumpToEnd(handles, maxMs)),
     crop: () => void frames.startCrop(),
     openInCutter: () => void dispatch(openPreviousInCutter()),
+    sendToCutter: () => {
+      pause()
+      void dispatch(sendToCutter())
+    },
     toggleForceTranscode: () => dispatch(forceTranscodeToggled()),
     externalPlayer: () => {
       pause()
@@ -221,7 +221,10 @@ export default function VideoTriageScreen() {
     restart: () => {
       restoreRef.current = handles
       dispatch(restartRequested())
-    }
+    },
+    zoomIn: zoom.zoomIn,
+    zoomOut: zoom.zoomOut,
+    zoomReset: zoom.zoomReset
   }
   useVideoTriageKeys(actions)
 
@@ -234,6 +237,7 @@ export default function VideoTriageScreen() {
   }
   const onScrub = (event: MouseEvent<HTMLElement>): void => {
     if ((event.buttons & 1) === 0 && !vt.flags.scrubOnHover) return
+    if (zoom.zoom > 1 && (event.buttons & 1) !== 0) return // a drag pans the zoomed picture
     const box = event.currentTarget.getBoundingClientRect()
     const target = scrubTarget(event.clientX - box.left, box.width, durationMs)
     if (target !== null) seek(target)
@@ -249,7 +253,8 @@ export default function VideoTriageScreen() {
   const onDrop = (event: DragEvent): void => {
     event.preventDefault()
     const dropped = collectDroppedPaths(event.dataTransfer)
-    const dir = dropped.folders[0] ?? (dropped.videos[0] === undefined ? null : dirname(dropped.videos[0]))
+    const dir =
+      dropped.folders[0] ?? (dropped.videos[0] === undefined ? null : dirname(dropped.videos[0]))
     if (dir === null) dispatch(notify('warning', 'Drop a folder or a video file'))
     else void openDir(dir)
   }
@@ -283,7 +288,8 @@ export default function VideoTriageScreen() {
       {
         label: 'Error move R',
         checked: settings.videoTriage.errorMoveR,
-        onClick: () => patchSettings({ videoTriage: { errorMoveR: !settings.videoTriage.errorMoveR } })
+        onClick: () =>
+          patchSettings({ videoTriage: { errorMoveR: !settings.videoTriage.errorMoveR } })
       },
       {
         label: 'Stay on top',
@@ -307,7 +313,10 @@ export default function VideoTriageScreen() {
         checked: settings.thumbs.enabled,
         onClick: () => patchSettings({ thumbs: { enabled: !settings.thumbs.enabled } })
       },
-      { label: 'Duplicates (MD5 analysis)', onClick: () => dispatch(workspaceActivated('duplicates')) }
+      {
+        label: 'Duplicates (MD5 analysis)',
+        onClick: () => dispatch(workspaceActivated('duplicates'))
+      }
     ]
     return { file, options, interfaces }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -370,8 +379,11 @@ export default function VideoTriageScreen() {
                   dispatch(durationLoaded({ durationMs: ms }))
                 }}
                 onPlayingChange={(playing) => dispatch(playingChanged(playing))}
-                onError={(message) => dispatch(notify('error', message))}
+                onError={(message, log) => dispatch(notify('error', message, log === undefined ? {} : { log }))}
                 onWheel={onWheel}
+                zoom={zoom.zoom}
+                pan={zoom.pan}
+                onPanChange={zoom.onPanChange}
               />
             ) : (
               <Typography sx={{ p: 2, color: '#ccc' }}>Video analysis is off</Typography>
@@ -408,9 +420,15 @@ export default function VideoTriageScreen() {
               if (range !== undefined) setHandles(loadRangeIntoHandles(range))
             }}
             onChange={(index, range) => dispatch(rangeEdited({ index, range }))}
-            onModeChange={(mode) => dispatch({ type: 'videoTriage/draftPatched', payload: { posExecution: mode } })}
+            onModeChange={(mode) =>
+              dispatch({ type: 'videoTriage/draftPatched', payload: { posExecution: mode } })
+            }
             onSplit={(parts) => {
-              const result = splitRanges(Math.min(handles.low, handles.high), Math.max(handles.low, handles.high), parts)
+              const result = splitRanges(
+                Math.min(handles.low, handles.high),
+                Math.max(handles.low, handles.high),
+                parts
+              )
               if (result.ok) dispatch(rangesReplaced(result.ranges))
               else dispatch(notify('warning', result.message))
             }}
@@ -429,7 +447,13 @@ export default function VideoTriageScreen() {
           />
           <Typography
             variant="caption"
-            onWheel={(event) => setVolume(event.deltaY < 0 ? volumeUp(toPercent(player.volume)) : volumeDown(toPercent(player.volume)))}
+            onWheel={(event) =>
+              setVolume(
+                event.deltaY < 0
+                  ? volumeUp(toPercent(player.volume))
+                  : volumeDown(toPercent(player.volume))
+              )
+            }
           >
             Volume {toPercent(player.volume)}% · Speed {player.speed}x
           </Typography>
@@ -449,7 +473,11 @@ export default function VideoTriageScreen() {
           open
           mode="video"
           title={frames.crop.frame.sourcePath}
-          image={{ url: frames.crop.frame.url, width: frames.crop.frame.width, height: frames.crop.frame.height }}
+          image={{
+            url: frames.crop.frame.url,
+            width: frames.crop.frame.width,
+            height: frames.crop.frame.height
+          }}
           initial={frames.crop.initial}
           detectBars={frames.detectBars}
           onAccept={frames.acceptCrop}
