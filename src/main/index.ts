@@ -1,7 +1,8 @@
 import { join } from 'node:path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
-import { app, BrowserWindow, dialog, protocol } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, protocol, shell } from 'electron'
 import icon from '../../resources/icon.png?asset'
+import { registerAllIpc } from './ipc/registerAll'
 
 const APP_USER_MODEL_ID = 'br.com.aloi.videoeditor'
 /** Matches `palette.background.default` in the renderer theme, so there is no white flash. */
@@ -91,8 +92,14 @@ function onReady(): void {
   electronApp.setAppUserModelId(APP_USER_MODEL_ID)
   app.on('browser-window-created', (_event, window) => optimizer.watchWindowShortcuts(window))
 
-  // SWARM-WIRE(protocol): register media:// handler here
-  // SWARM-WIRE(ipc): registerAllIpc() here
+  // SWARM-WIRE(protocol): registerMediaProtocol(ipc.context) once svc-media provides it (wave 2)
+  registerAllIpc({
+    ipcMain,
+    getWindow: () => mainWindow,
+    trashItem: (path) => shell.trashItem(path),
+    userDataDir: app.getPath('userData'),
+    tempDir: app.getPath('temp')
+  })
 
   mainWindow = createMainWindow()
   app.on('activate', () => {

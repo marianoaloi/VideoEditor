@@ -5,6 +5,7 @@
 import { z } from 'zod';
 import { AbsPathSchema, FolderNameSchema, IdSchema, TimestampMsSchema } from './common';
 import { IpcErrorSchema } from './errors';
+import { SessionItemSchema } from './session';
 
 /** Well-known destinations, resolved through `settings.folders`. */
 export const DestinationRoleSchema = z.enum(['left', 'right', 'custom', 'purge', 'ruim']);
@@ -29,7 +30,7 @@ export type SidecarMove = z.infer<typeof SidecarMoveSchema>;
 /**
  * One line of `<root>/.mediamaloi/journal.jsonl`. ADR-006 fields plus:
  * `undoable` (false for trash and for entries already undone), `undoOf` (on `undo` entries) and
- * `backupPath` (on `write` entries: the `bkp/` copy taken before an in-place edit).
+ * `backup` (ADR-006; on `write` entries: the `bkp/` copy taken before an in-place edit).
  */
 export const JournalEntrySchema = z.object({
   id: IdSchema,
@@ -42,7 +43,7 @@ export const JournalEntrySchema = z.object({
   sessionId: IdSchema.nullable(),
   undoable: z.boolean(),
   undoOf: IdSchema.optional(),
-  backupPath: AbsPathSchema.optional()
+  backup: AbsPathSchema.optional()
 });
 export type JournalEntry = z.infer<typeof JournalEntrySchema>;
 
@@ -87,9 +88,18 @@ export type UndoRequest = z.input<typeof UndoRequestSchema>;
 export const UndoResultSchema = z.object({
   undone: JournalEntrySchema,
   compensating: JournalEntrySchema,
-  restoredPath: AbsPathSchema
+  restoredPath: AbsPathSchema,
+  /**
+   * The restored file as a session item (fresh size/mtime) when it belongs to the session's root
+   * and kind filter. The renderer re-inserts it when the decision stack was empty (ADR-006).
+   */
+  item: SessionItemSchema.nullable()
 });
 export type UndoResult = z.infer<typeof UndoResultSchema>;
+
+/** Which entry `fileops:undo` would reverse without `entryId` (null: nothing to undo). */
+export const PeekUndoRequestSchema = z.object({ sessionId: IdSchema });
+export type PeekUndoRequest = z.input<typeof PeekUndoRequestSchema>;
 
 /** Shift+Del: `shell.trashItem` on the file and its sidecars. Not undoable. */
 export const TrashRequestSchema = z.object({ sessionId: IdSchema, path: AbsPathSchema });
@@ -106,6 +116,15 @@ export type CopyResult = z.infer<typeof CopyResultSchema>;
 /** Image triage "Reset L/R": move every file of `<root>/<folder>/` back to the root. */
 export const ResetFolderRequestSchema = z.object({ sessionId: IdSchema, folder: FolderNameSchema });
 export type ResetFolderRequest = z.input<typeof ResetFolderRequestSchema>;
+
+/**
+ * Image Triage `L` ("send") pre-clean (settings `imageTriage.sendPreclean`): trash the zero-byte
+ * files and `*.log` files that sit directly in `<root>/<folder>`. Journaled as `trash`.
+ */
+export const PrecleanRequestSchema = z.object({ sessionId: IdSchema, folder: FolderNameSchema });
+export type PrecleanRequest = z.input<typeof PrecleanRequestSchema>;
+export const PrecleanResultSchema = z.object({ trashed: z.array(AbsPathSchema) });
+export type PrecleanResult = z.infer<typeof PrecleanResultSchema>;
 
 export const JournalListRequestSchema = z.object({
   sessionId: IdSchema,
