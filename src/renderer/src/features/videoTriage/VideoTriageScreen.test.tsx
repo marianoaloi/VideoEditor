@@ -240,6 +240,61 @@ describe('Video Triage screen', () => {
     await waitFor(() => expect(store.getState().videoTriage.cursor).toBe(0))
   })
 
+  it('a video with a <video>.json is set up from it: ranges, concat, size/crop overrides, convert, notice', async () => {
+    handlers['jobs:readJob'] = () => ({
+      ok: true,
+      data: {
+        found: true,
+        format: 'v2',
+        warnings: [],
+        job: {
+          version: 2,
+          filename: '/in/v0.mp4',
+          originalPath: '/in/v0.mp4',
+          crop: { x: 10, y: 20, w: 300, h: 200 },
+          bright: null,
+          contrast: null,
+          transpose: null,
+          mediaPath: null,
+          convert: true,
+          size: '640x360',
+          rate: 800,
+          avgrate: null,
+          times: [
+            [1_000, 5_000],
+            [9_000, 12_000]
+          ],
+          posExecution: 2
+        }
+      }
+    })
+    const store = await mount()
+    await waitFor(() => expect(store.getState().videoTriage.draft.ranges).toHaveLength(2))
+    const { draft } = store.getState().videoTriage
+    expect(draft.ranges).toEqual([
+      [1_000, 5_000],
+      [9_000, 12_000]
+    ])
+    expect(draft.posExecution).toBe(2)
+    expect(draft.convert).toBe(true)
+    expect(draft.overrides).toMatchObject({
+      size: '640x360',
+      rate: 800,
+      crop: { x: 10, y: 20, w: 300, h: 200 }
+    })
+    expect(JSON.stringify(store.getState().notifications)).toContain(
+      'Loaded v0.mp4.json: 2 ranges, concat, crop, size 640x360, 800 kbit/s, convert first'
+    )
+  })
+
+  it('a video without a sidecar keeps the default cut mode and no notice', async () => {
+    const store = await mount()
+    const { draft } = store.getState().videoTriage
+    expect(draft.ranges).toEqual([])
+    expect(draft.posExecution).toBe(1)
+    expect(JSON.stringify(store.getState().notifications)).not.toContain('Loaded')
+  })
+
   it('M1: a failed job write undoes THIS move by entry id, not whatever was decided last', async () => {
     const store = await mount()
     act(() => {
@@ -383,16 +438,29 @@ describe('Video Triage screen', () => {
 
   it('zoom chords: registered once, update the slice, and Ctrl+Plus never fires the plain Plus binding', async () => {
     const store = await mount()
-    const chords = allHandlers().filter((b) => b.scope === 'videoTriage').flatMap((b) => b.keys)
+    const chords = allHandlers()
+      .filter((b) => b.scope === 'videoTriage')
+      .flatMap((b) => b.keys)
     for (const chord of ['Ctrl+Plus', 'Ctrl+Minus', 'Ctrl+0']) {
       expect(chords.filter((c) => c === chord)).toHaveLength(1)
     }
-    expect(findConflicts(allHandlers().map((b) => ({ id: b.id, keys: [...b.keys], description: b.description, scope: b.scope })))).toEqual([])
+    expect(
+      findConflicts(
+        allHandlers().map((b) => ({
+          id: b.id,
+          keys: [...b.keys],
+          description: b.description,
+          scope: b.scope
+        }))
+      )
+    ).toEqual([])
     const state = { activeWorkspace: 'videoTriage' as const, modalStack: [] }
     const info = { repeat: false, inInput: false }
     expect(resolveBinding('Ctrl+Plus', state, info)?.id).toBe('videoTriage.zoomIn')
     expect(resolveBinding('Plus', state, info)?.id).toBe('videoTriage.externalPlayer')
-    expect(resolveBinding('Ctrl+Minus', state, { repeat: true, inInput: false })?.id).toBe('videoTriage.zoomOut')
+    expect(resolveBinding('Ctrl+Minus', state, { repeat: true, inInput: false })?.id).toBe(
+      'videoTriage.zoomOut'
+    )
     press('videoTriage.zoomIn')
     press('videoTriage.zoomIn')
     expect(store.getState().player.zoom).toBe(1.5625)

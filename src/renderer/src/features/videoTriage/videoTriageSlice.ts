@@ -16,7 +16,7 @@ import {
   type ActiveHandle,
   type Handles
 } from '@shared/core/jobDraft'
-import type { Range } from '@shared/domain/job'
+import type { ProcessingMode, Range } from '@shared/domain/job'
 import type { ScanProgress, Session } from '@shared/domain/session'
 import type { SerializedError } from '../../app/api'
 import { createJobDraft, type JobDraftOverrides, type JobDraftState } from '../../app/draft'
@@ -165,10 +165,21 @@ const videoTriageSlice = createSlice({
     /** The sidecar `<video>.json` of the current item: ranges and overrides come back (K2). */
     sidecarLoaded(
       state,
-      action: PayloadAction<{ ranges: Range[]; overrides: Partial<JobDraftOverrides> }>
+      action: PayloadAction<{
+        ranges: Range[]
+        overrides: Partial<JobDraftOverrides>
+        /** Cut or concat, as saved in the job. */
+        posExecution?: ProcessingMode
+        /** The convert pre-step. Only a `true` is applied: the checkbox stays sticky otherwise. */
+        convert?: boolean
+      }>
     ) {
       state.draft.ranges = action.payload.ranges
       Object.assign(state.draft.overrides, action.payload.overrides)
+      if (action.payload.posExecution !== undefined) {
+        state.draft.posExecution = action.payload.posExecution
+      }
+      if (action.payload.convert === true) state.draft.convert = true
     }
   },
   extraReducers: (builder) => {

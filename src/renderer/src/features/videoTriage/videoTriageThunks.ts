@@ -126,6 +126,30 @@ export const saveTime = createAppAsyncThunk(
   }
 )
 
+/** "Loaded x.mp4.json: 2 ranges, cut, crop, size 640x360" for the notice after a sidecar loads. */
+export function describeSidecar(
+  videoPath: string,
+  job: {
+    times: readonly unknown[]
+    posExecution: ProcessingMode
+    convert: boolean
+    crop: unknown
+    size: string | null
+    rate: number | null
+  }
+): string {
+  const ranges = job.times.length
+  const parts = [
+    `${String(ranges)} ${ranges === 1 ? 'range' : 'ranges'}`,
+    job.posExecution === ProcessingMode.concat ? 'concat' : 'cut'
+  ]
+  if (job.crop !== null) parts.push('crop')
+  if (job.size !== null) parts.push(`size ${job.size}`)
+  if (job.rate !== null) parts.push(`${String(job.rate)} kbit/s`)
+  if (job.convert) parts.push('convert first')
+  return `Loaded ${basename(videoPath)}.json: ${parts.join(', ')}`
+}
+
 /** Loads the sidecar of the current item (ranges, overrides) after `itemActivated`. */
 export const loadSidecar = createAppAsyncThunk(
   'videoTriage/loadSidecar',
@@ -146,7 +170,15 @@ export const loadSidecar = createAppAsyncThunk(
         contrast: read.job.contrast,
         transpose: read.job.transpose
       }
-      dispatch(sidecarLoaded({ ranges: read.job.times, overrides }))
+      dispatch(
+        sidecarLoaded({
+          ranges: read.job.times,
+          overrides,
+          posExecution: read.job.posExecution,
+          convert: read.job.convert
+        })
+      )
+      dispatch(notify('info', describeSidecar(item.path, read.job), { autoHideMs: 3000 }))
       return itemId
     } catch (error: unknown) {
       return rejectWithValue(toSerializedError(error))
