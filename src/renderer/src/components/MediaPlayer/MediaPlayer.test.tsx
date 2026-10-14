@@ -147,4 +147,37 @@ describe('MediaPlayer timeline and handle', () => {
     fireEvent.wheel(el, { deltaY: -100 })
     expect(onWheel).toHaveBeenCalledTimes(1)
   })
+
+  describe('zoom', () => {
+    it('applies the transform and shows the badge only when zoomed', () => {
+      const { container, queryByTestId, rerender } = render(<MediaPlayer {...props()} />)
+      expect(video(container).style.transform).toBe('')
+      expect(queryByTestId('zoom-badge')).toBeNull()
+      rerender(<MediaPlayer {...props({ zoom: 2.5, pan: { x: 0.25, y: -0.5 } })} />)
+      expect(video(container).style.transform).toBe('translate(25%, -50%) scale(2.5)')
+      expect(queryByTestId('zoom-badge')).toHaveTextContent('250 %')
+    })
+
+    it('clamps a pan that would leave gutters', () => {
+      const { container } = render(<MediaPlayer {...props({ zoom: 2, pan: { x: 5, y: -5 } })} />)
+      expect(video(container).style.transform).toBe('translate(50%, -50%) scale(2)')
+    })
+
+    it('drags to pan with clamped fractions, and not at zoom 1', () => {
+      const onPanChange = vi.fn()
+      const { getByTestId, rerender } = render(<MediaPlayer {...props({ onPanChange })} />)
+      const box = getByTestId('player-zoom-box')
+      vi.spyOn(box, 'getBoundingClientRect').mockReturnValue({ width: 400, height: 200 } as DOMRect)
+      fireEvent.pointerDown(box, { button: 0, clientX: 100, clientY: 100 })
+      fireEvent.pointerMove(box, { clientX: 140, clientY: 100 })
+      expect(onPanChange).not.toHaveBeenCalled()
+      rerender(<MediaPlayer {...props({ onPanChange, zoom: 2 })} />)
+      fireEvent.pointerDown(box, { button: 0, clientX: 100, clientY: 100 })
+      fireEvent.pointerMove(box, { clientX: 140, clientY: 120 })
+      expect(onPanChange).toHaveBeenLastCalledWith({ x: 0.1, y: 0.1 })
+      fireEvent.pointerUp(box)
+      fireEvent.pointerMove(box, { clientX: 300, clientY: 120 })
+      expect(onPanChange).toHaveBeenCalledTimes(1)
+    })
+  })
 })

@@ -8,8 +8,9 @@
  * on demand. Seeking inside a transcode stream either moves `currentTime` (already buffered) or
  * re-requests the stream from the target.
  */
-import { useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { useEffect, useImperativeHandle, useRef, useState, type PointerEvent } from 'react'
 import { checkPlayback } from '@shared/core/playability'
+import { NO_PAN, clampZoom, dragPan, formatZoom, zoomTransform } from '@shared/core/videoZoom'
 import { toMediaUrl, toTranscodeUrl } from '@shared/ipc/mediaUrl'
 import { planTranscodeSeek, toElementSec, toOriginalMs } from './timeline'
 import type { MediaPlayerProps, PlayerMode } from './types'
@@ -42,11 +43,28 @@ function describeError(video: HTMLVideoElement | null): string {
   return message !== undefined && message !== '' ? message : 'The video could not be played'
 }
 
+const BADGE_STYLE = {
+  position: 'absolute',
+  top: 6,
+  right: 6,
+  padding: '1px 6px',
+  borderRadius: 4,
+  fontSize: 12,
+  lineHeight: '18px',
+  color: '#fff',
+  background: 'rgba(0, 0, 0, 0.55)',
+  pointerEvents: 'none'
+} as const
+
 export function MediaPlayer(props: MediaPlayerProps) {
   const { path, info, speed, volume, muted, forceTranscode = false, label, ref } = props
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const [source, setSource] = useState<Source | null>(null)
   const [playing, setPlaying] = useState(false)
+  const boxRef = useRef<HTMLDivElement | null>(null)
+  const dragRef = useRef<{ x: number; y: number } | null>(null)
+  const zoom = clampZoom(props.zoom ?? 1)
+  const pan = props.pan ?? NO_PAN
 
   // Latest props for the stable handlers below (no stale closures, no re-subscribing).
   const latest = useRef(props)
@@ -219,14 +237,70 @@ export function MediaPlayer(props: MediaPlayerProps) {
     latest.current.onError?.(describeError(video))
   }
 
+  // ---- zoom: left-button drag pans (the screens' scrub handlers never see this drag) ---------
+  const zoomed = zoom > 1
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>): void => {
+    if (!zoomed || event.button !== 0) return
+    event.stopPropagation()
+    dragRef.current = { x: event.clientX, y: event.clientY }
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+  }
+  const handlePointerMove = (event: PointerEvent<HTMLDivElement>): void => {
+    const from = dragRef.current
+    if (from === null) return
+    event.stopPropagation()
+    const rect = boxRef.current?.getBoundingClientRect()
+    dragRef.current = { x: event.clientX, y: event.clientY }
+    if (rect === undefined) return
+    const next = dragPan(
+      pan,
+      zoom,
+      { dxPx: event.clientX - from.x, dyPx: event.clientY - from.y },
+      rect
+    )
+    latest.current.onPanChange?.(next)
+  }
+  const endDrag = (event: PointerEvent<HTMLDivElement>): void => {
+    if (dragRef.current === null) return
+    event.stopPropagation()
+    dragRef.current = null
+    event.currentTarget.releasePointerCapture?.(event.pointerId)
+  }
+
   return (
+    <div
+      ref={boxRef}
+      data-testid="player-zoom-box"
+      style={{
+        position: 'relative',
+        width: '100%',
+        height: '100%',
+        overflow: 'hidden',
+        background: '#000',
+        cursor: zoomed ? (dragRef.current === null ? 'grab' : 'grabbing') : undefined
+      }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      onMouseMove={(event) => {
+        if (dragRef.current !== null) event.stopPropagation()
+      }}
+    >
     <video
       ref={videoRef}
       src={source?.url}
       aria-label={label ?? 'Video player'}
       preload="auto"
       playsInline
-      style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000' }}
+      style={{
+        width: '100%',
+        height: '100%',
+        objectFit: 'contain',
+        background: '#000',
+        transformOrigin: '50% 50%',
+        transform: zoomed ? zoomTransform(zoom, pan) : undefined
+      }}
       onLoadedMetadata={handleLoadedMetadata}
       onDurationChange={reportDuration}
       onTimeUpdate={emitPosition}
@@ -242,6 +316,12 @@ export function MediaPlayer(props: MediaPlayerProps) {
       onEnded={() => latest.current.onEnded?.()}
       onError={handleError}
     />
+    {zoomed && (
+      <span data-testid="zoom-badge" aria-label="Zoom" style={BADGE_STYLE}>
+        {formatZoom(zoom)}
+      </span>
+    )}
+    </div>
   )
 }
 

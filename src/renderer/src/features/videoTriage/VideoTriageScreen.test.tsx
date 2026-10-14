@@ -7,7 +7,9 @@ import type { MediaInfo } from '@shared/domain/media'
 import type { Session } from '@shared/domain/session'
 import type { InvokeChannel, RendererApi } from '@shared/ipc/contract'
 import { setBridge } from '../../app/api'
-import { allHandlers, clearHandlers } from '../../app/keymap/registry'
+import { findConflicts } from '../../app/keymap/conflicts'
+import { allHandlers, clearHandlers, resolveBinding } from '../../app/keymap/registry'
+import { panChanged } from '../../app/player/playerSlice'
 import { createAppStore } from '../../app/store'
 import VideoTriageScreen from './VideoTriageScreen'
 import { handlesSet, sessionOpened, videoTriageThunks } from './videoTriageSlice'
@@ -377,5 +379,37 @@ describe('Video Triage screen', () => {
     ]) {
       expect(chords, chord).toContain(chord)
     }
+  })
+
+  it('zoom chords: registered once, update the slice, and Ctrl+Plus never fires the plain Plus binding', async () => {
+    const store = await mount()
+    const chords = allHandlers().filter((b) => b.scope === 'videoTriage').flatMap((b) => b.keys)
+    for (const chord of ['Ctrl+Plus', 'Ctrl+Minus', 'Ctrl+0']) {
+      expect(chords.filter((c) => c === chord)).toHaveLength(1)
+    }
+    expect(findConflicts(allHandlers().map((b) => ({ id: b.id, keys: [...b.keys], description: b.description, scope: b.scope })))).toEqual([])
+    const state = { activeWorkspace: 'videoTriage' as const, modalStack: [] }
+    const info = { repeat: false, inInput: false }
+    expect(resolveBinding('Ctrl+Plus', state, info)?.id).toBe('videoTriage.zoomIn')
+    expect(resolveBinding('Plus', state, info)?.id).toBe('videoTriage.externalPlayer')
+    expect(resolveBinding('Ctrl+Minus', state, { repeat: true, inInput: false })?.id).toBe('videoTriage.zoomOut')
+    press('videoTriage.zoomIn')
+    press('videoTriage.zoomIn')
+    expect(store.getState().player.zoom).toBe(1.5625)
+    press('videoTriage.zoomOut')
+    expect(store.getState().player.zoom).toBe(1.25)
+    press('videoTriage.zoomReset')
+    expect(store.getState().player.zoom).toBe(1)
+    expect(channelsCalled()).not.toContain('app:openExternal')
+  })
+
+  it('zoom and pan survive moving to the next video', async () => {
+    const store = await mount()
+    press('videoTriage.zoomIn')
+    press('videoTriage.zoomIn')
+    store.dispatch(panChanged({ x: 0.1, y: -0.1 }))
+    press('videoTriage.skip')
+    await waitFor(() => expect(store.getState().videoTriage.cursor).toBe(1))
+    expect(store.getState().player).toMatchObject({ zoom: 1.5625, panX: 0.1, panY: -0.1 })
   })
 })

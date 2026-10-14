@@ -68,7 +68,8 @@ export function eventToChord(event: KeyEventLike): KeyChord | null {
   let symbol = false
   const code = event.code
   const symbolByCode = SYMBOL_KEYS[code]
-  const symbolByKey = SYMBOL_KEYS[event.key]
+  // Ctrl+= is the unshifted key that carries '+' (zoom in); plain '=' stays unmapped.
+  const symbolByKey = event.key === '=' && event.ctrlKey ? 'Plus' : SYMBOL_KEYS[event.key]
   if (/^Digit[0-9]$/.test(code)) name = code.slice(5)
   else if (/^Numpad[0-9]$/.test(code)) name = code.slice(6)
   else if (symbolByCode !== undefined) {

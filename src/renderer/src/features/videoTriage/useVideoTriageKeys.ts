@@ -39,6 +39,9 @@ export interface TriageKeyActions {
   seek(key: SeekKey, event: KeyboardEvent): void
   openFolder(): void
   restart(): void
+  zoomIn(): void
+  zoomOut(): void
+  zoomReset(): void
 }
 
 function seekBinding(key: SeekKey, actions: TriageKeyActions): KeyBinding {
@@ -113,6 +116,9 @@ export function buildTriageBindings(actions: TriageKeyActions): KeyBinding[] {
     bind('playPause', ['S'], 'Play / pause', actions.togglePlay),
     bind('openFolder', ['Ctrl+O'], 'Open a folder', actions.openFolder),
     bind('restart', ['Ctrl+Shift+G'], 'Restart the current video', actions.restart),
+    bind('zoomIn', ['Ctrl+Plus'], 'Zoom in', actions.zoomIn, { allowRepeat: true }),
+    bind('zoomOut', ['Ctrl+Minus'], 'Zoom out', actions.zoomOut, { allowRepeat: true }),
+    bind('zoomReset', ['Ctrl+0'], 'Reset zoom', actions.zoomReset),
     ...speedBindings(actions),
     ...SEEK_KEYS.map((key) => seekBinding(key, actions))
   ]

@@ -2,27 +2,13 @@
  * Video Triage workspace (F2; video-triage.md). Wires the player, range slider, ranges list, info
  * bar and the key table to the slice and thunks. Decisions go through the shared triage thunks.
  */
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type DragEvent,
-  type MouseEvent
-} from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import LinearProgress from '@mui/material/LinearProgress'
 import Typography from '@mui/material/Typography'
 import {
-  dragHandle,
-  jumpToEnd,
-  jumpToStart,
-  loadRangeIntoHandles,
-  rangeFromHandles,
-  selectionMs,
-  swapActive
+  dragHandle, jumpToEnd, jumpToStart, loadRangeIntoHandles, rangeFromHandles, selectionMs, swapActive
 } from '@shared/core/jobDraft'
 import { collectDroppedPaths } from '../../app/dropFiles'
 import {
@@ -45,13 +31,9 @@ import { workspaceActivated } from '../../app/keymap/keymapSlice'
 import { fetchMediaInfo, prefetchMedia } from '../../app/mediaInfo/mediaInfoSlice'
 import { notify, notifyApiError } from '../../app/notifications/notify'
 import {
-  durationChanged,
-  fileOpened,
-  playingChanged,
-  positionChanged,
-  speedSet,
-  volumeSet
+  durationChanged, fileOpened, playingChanged, positionChanged, speedSet, volumeSet
 } from '../../app/player/playerSlice'
+import { usePlayerZoom } from '../../app/player/usePlayerZoom'
 import { countByStatus, currentItem, isEnd } from '../../app/triage/triageCore'
 import CropDialog from '../../components/CropDialog'
 import InfoBar from '../../components/InfoBar/InfoBar'
@@ -99,6 +81,7 @@ export default function VideoTriageScreen() {
   const vt = useAppSelector(selectVideoTriage)
   const settings = useAppSelector((s) => s.settings.value) ?? DEFAULT_SETTINGS
   const player = useAppSelector((s) => s.player)
+  const zoom = usePlayerZoom()
   const item = currentItem(vt)
   const entry = useAppSelector((s) => (item === null ? undefined : s.mediaInfo.byPath[item.path]))
   const info = entry?.status === 'ready' ? entry.info : null
@@ -174,6 +157,7 @@ export default function VideoTriageScreen() {
     }
   }
   const openDir = async (dir: string): Promise<void> => {
+    zoom.zoomReset()
     if (vt.sessionId !== null) await dispatch(videoTriageThunks.closeFolder())
     await dispatch(
       videoTriageThunks.openFolder({
@@ -238,7 +222,10 @@ export default function VideoTriageScreen() {
     restart: () => {
       restoreRef.current = handles
       dispatch(restartRequested())
-    }
+    },
+    zoomIn: zoom.zoomIn,
+    zoomOut: zoom.zoomOut,
+    zoomReset: zoom.zoomReset
   }
   useVideoTriageKeys(actions)
 
@@ -251,6 +238,7 @@ export default function VideoTriageScreen() {
   }
   const onScrub = (event: MouseEvent<HTMLElement>): void => {
     if ((event.buttons & 1) === 0 && !vt.flags.scrubOnHover) return
+    if (zoom.zoom > 1 && (event.buttons & 1) !== 0) return // a drag pans the zoomed picture
     const box = event.currentTarget.getBoundingClientRect()
     const target = scrubTarget(event.clientX - box.left, box.width, durationMs)
     if (target !== null) seek(target)
@@ -353,7 +341,6 @@ export default function VideoTriageScreen() {
         forceTranscode={vt.forceTranscode}
         onForceTranscode={() => dispatch(forceTranscodeToggled())}
         onExecute={() => void dispatch(executeCustomFolder(settings.folders.custom))}
-        onSendToCutter={actions.sendToCutter}
         onFind={find}
         findError={findError}
       />
@@ -395,6 +382,9 @@ export default function VideoTriageScreen() {
                 onPlayingChange={(playing) => dispatch(playingChanged(playing))}
                 onError={(message) => dispatch(notify('error', message))}
                 onWheel={onWheel}
+                zoom={zoom.zoom}
+                pan={zoom.pan}
+                onPanChange={zoom.onPanChange}
               />
             ) : (
               <Typography sx={{ p: 2, color: '#ccc' }}>Video analysis is off</Typography>

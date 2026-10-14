@@ -39,6 +39,12 @@ export interface MediaPlayerProps {
   onEnded?: () => void
   /** Mouse wheel over the video: `deltaY` sign follows the DOM event. The screen decides what it does. */
   onWheel?: (event: WheelEvent) => void
+  /** Visual zoom 1..8 (default 1); a CSS transform, the source frame is untouched. */
+  zoom?: number
+  /** Pan as a fraction of the player box (see `@shared/core/videoZoom`). */
+  pan?: { x: number; y: number }
+  /** Left-button drag while zoomed in; the new, already clamped pan. */
+  onPanChange?: (pan: { x: number; y: number }) => void
   /** Accessible name, default "Video player". */
   label?: string
   /** React 19 ref prop: the imperative handle. */

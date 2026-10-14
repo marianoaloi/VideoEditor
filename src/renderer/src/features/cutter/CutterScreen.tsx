@@ -14,6 +14,7 @@ import {
   playingChanged,
   positionChanged
 } from '../../app/player/playerSlice'
+import { usePlayerZoom } from '../../app/player/usePlayerZoom'
 import CropDialog from '../../components/CropDialog/CropDialog'
 import InfoBar from '../../components/InfoBar/InfoBar'
 import MediaPlayer from '../../components/MediaPlayer/MediaPlayer'
@@ -51,6 +52,7 @@ export default function CutterScreen() {
 
   const cutter = useAppSelector((s) => s.cutter)
   const player = useAppSelector((s) => s.player)
+  const zoom = usePlayerZoom()
   const settings = useAppSelector((s) => s.settings.value)
   const info = useAppSelector((s) =>
     s.cutter.videoPath === null ? undefined : s.mediaInfo.byPath[s.cutter.videoPath]
@@ -68,7 +70,7 @@ export default function CutterScreen() {
   }, [videoPath, cutter.dirty, draft.ranges.length, actions])
 
   const keysEnabled = videoPath !== null && !cutter.process.open && crop.dialogProps === null && !confirmClose
-  useCutterKeys({ actions, openCrop: () => void crop.start(), requestClose, enabled: keysEnabled })
+  useCutterKeys({ actions, zoom, openCrop: () => void crop.start(), requestClose, enabled: keysEnabled })
 
   // A new video (opened here, by a drop on the Jobs screen or by Video Triage): reset the player.
   useEffect(() => {
@@ -169,6 +171,9 @@ export default function CutterScreen() {
                 onDuration={(ms) => dispatch(durationChanged(ms))}
                 onPlayingChange={(playing) => dispatch(playingChanged(playing))}
                 onWheel={(event) => wheelSeek(event.deltaY)}
+                zoom={zoom.zoom}
+                pan={zoom.pan}
+                onPanChange={zoom.onPanChange}
                 onError={(message) => dispatch(notify('error', message))}
               />
             </Box>
