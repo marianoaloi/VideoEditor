@@ -1,6 +1,7 @@
 {
   "name": "videoeditor",
   "productName": "VideoEditor",
+  "author": {"name": "Mariano Aloi","email": "mariano@aloi.com.br"},
   "version": "0.1.0",
   "description": "Keyboard-first media triage, cutter and duplicate finder (Electron + React + Redux Toolkit + TypeScript)",
   "private": true,
