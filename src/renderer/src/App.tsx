@@ -68,7 +68,7 @@ const NAV_WIDTH = 176
 
 /**
  * Application shell: workspace navigation on the left, the active workspace on the right.
- * The active workspace lives in the keymap slice so the keyboard (Ctrl+1..6) and the mouse agree,
+ * The active workspace lives in the keymap slice so the keyboard (Alt+1..6) and the mouse agree,
  * and only the active screen is mounted (its keymap scope is registered only while shown).
  */
 export default function App() {

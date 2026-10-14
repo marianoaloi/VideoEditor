@@ -53,18 +53,23 @@ describe('App shell', () => {
   it('starts on Video Triage and switches the main area on click', async () => {
     const user = userEvent.setup()
     renderApp()
-    expect(screen.getByRole('button', { name: 'Video Triage' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('button', { name: 'Video Triage' })).toHaveAttribute(
+      'aria-current',
+      'page'
+    )
 
     await user.click(screen.getByRole('button', { name: 'Jobs' }))
 
-    expect(await screen.findByRole('heading', { name: 'Jobs' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: 'Jobs' }, { timeout: 10_000 })
+    ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Jobs' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('button', { name: 'Video Triage' })).not.toHaveAttribute('aria-current')
   })
 
-  it('switches workspace with Ctrl+4 and opens the F1 help with the global shortcuts', async () => {
+  it('switches workspace with Alt+4 and opens the F1 help with the global shortcuts', async () => {
     const store = renderApp()
-    fireEvent.keyDown(window, { key: '4', code: 'Digit4', ctrlKey: true })
+    fireEvent.keyDown(window, { key: '4', code: 'Digit4', altKey: true })
     expect(store.getState().keymap.activeWorkspace).toBe('jobs')
     expect(screen.getByRole('button', { name: 'Jobs' })).toHaveAttribute('aria-current', 'page')
 

@@ -30,7 +30,7 @@ import { useKeymap } from '../../app/keymap/useKeymap'
 import { useNotify } from '../../app/notifications/notify'
 import CropSliders from './CropSliders'
 import CropStage from './CropStage'
-import { EMPTY_SELECTION, moveSelection, pressSelection, releaseSelection, type SelectionModel } from './selection'
+import { moveSelection, pressSelection, releaseSelection, type SelectionModel } from './selection'
 import type { CropDialogProps, CropResult } from './types'
 import { useElementSize, useLoadedImage } from './hooks'
 

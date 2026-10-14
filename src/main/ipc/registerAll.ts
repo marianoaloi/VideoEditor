@@ -28,15 +28,16 @@ import { createMediaAllowlist } from './mediaAllowlist'
  * settings first (everybody reads them), then session/fileops/hooks (they provide
  * `sessions`, `journal`, `hooks`), then the services that consume those slots.
  */
-export function registerServices(ctx: MainContext): void {
+export function registerServices(ctx: MainContext): { dispose(): void } {
   registerSettingsIpc(ctx)
   registerAppIpc(ctx)
   registerSessionIpc(ctx)
   registerFileopsIpc(ctx)
   registerHooksIpc(ctx)
   registerMediaIpc(ctx)
-  registerJobsIpc(ctx)
+  const jobs = registerJobsIpc(ctx)
   registerHashingIpc(ctx)
+  return { dispose: () => jobs.dispose() }
 }
 
 export interface RegisterAllDeps {
@@ -49,7 +50,7 @@ export interface RegisterAllDeps {
 
 export interface RegisteredIpc {
   readonly context: MainContext
-  /** Detaches the handlers from `ipcMain` (tests, hot reload). */
+  /** Detaches the handlers from `ipcMain` and stops running jobs (quit, tests, hot reload). */
   dispose(): void
 }
 
@@ -62,7 +63,7 @@ export function registerAllIpc(deps: RegisterAllDeps): RegisteredIpc {
     trashItem: deps.trashItem,
     newId: randomUUID
   })
-  registerServices(context)
+  const services = registerServices(context)
 
   const missing = missingChannels()
   if (missing.length > 0) {
@@ -73,6 +74,12 @@ export function registerAllIpc(deps: RegisterAllDeps): RegisteredIpc {
     const win = deps.getWindow()
     return win !== null && !win.isDestroyed() && win.webContents.id === event.sender.id
   }
-  const dispose = bindIpcMain(deps.ipcMain, isTrusted)
-  return { context, dispose }
+  const unbind = bindIpcMain(deps.ipcMain, isTrusted)
+  return {
+    context,
+    dispose: () => {
+      unbind()
+      services.dispose()
+    }
+  }
 }

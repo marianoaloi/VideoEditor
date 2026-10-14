@@ -191,3 +191,16 @@ export const ImageRestoreResultSchema = z.object({
   version: z.number().nonnegative()
 });
 export type ImageRestoreResult = z.infer<typeof ImageRestoreResultSchema>;
+
+export const ImagePreviewRequestSchema = z.object({
+  path: AbsPathSchema,
+  force: z.boolean().default(false)
+});
+export type ImagePreviewRequest = z.input<typeof ImagePreviewRequestSchema>;
+
+/** `reason: null` means the original can be shown as is (`preview` is then `null`). */
+export const ImagePreviewResultSchema = z.object({
+  reason: z.enum(['trailer-missing', 'not-browser-native', 'forced']).nullable(),
+  preview: z.object({ url: z.string(), width: z.number(), height: z.number() }).nullable()
+});
+export type ImagePreviewResult = z.infer<typeof ImagePreviewResultSchema>;

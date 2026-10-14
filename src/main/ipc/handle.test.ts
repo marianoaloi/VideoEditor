@@ -103,8 +103,8 @@ describe('bindIpcMain', () => {
   })
 })
 
-describe('registerServices (wave-1 stubs)', () => {
-  it('covers every channel of the contract and answers NOT_IMPLEMENTED', async () => {
+describe('registerServices', () => {
+  it('registers a handler for every channel of the contract', () => {
     const ctx = createMainContext({
       getWindow: () => null,
       settings: createSettingsAccess(DEFAULT_SETTINGS),
@@ -116,7 +116,5 @@ describe('registerServices (wave-1 stubs)', () => {
     registerServices(ctx)
     expect(missingChannels()).toEqual([])
     expect(handledChannels().length).toBe(INVOKE_CHANNELS.length)
-    const r = await dispatch('settings:get', undefined)
-    expect(r).toMatchObject({ ok: false, error: { code: 'NOT_IMPLEMENTED' } })
   })
 })

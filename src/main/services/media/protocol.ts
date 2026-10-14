@@ -14,5 +14,16 @@ export function registerMediaProtocol(ctx: MainContext): void {
     allowlist: ctx.allowlist,
     ffmpegConfig: () => ctx.settings.get().ffmpeg
   })
-  protocol.handle('media', (request) => handler(request))
+  protocol.handle('media', async (request) => {
+    const response = await handler(request)
+    // The page origin differs (dev server or file://); the allowlist already guards access.
+    // CORS lets <img crossOrigin> read pixels for the exact brightness/contrast preview.
+    const headers = new Headers(response.headers)
+    headers.set('Access-Control-Allow-Origin', '*')
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers
+    })
+  })
 }

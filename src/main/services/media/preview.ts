@@ -2,7 +2,7 @@
  * Converted image preview (image-triage.md §5): the original file is NEVER rewritten. When it has
  * a missing JPEG/PNG trailer, cannot be shown by `<img>` (tif/heic) or the renderer reports a
  * load error, a decoded JPEG copy goes to a cache folder outside the user's folder.
- * Not wired to a channel yet (see REQUESTS: `media:imagePreview`).
+ * Exposed as the `media:imagePreview` channel.
  */
 import { createHash } from 'node:crypto'
 import { mkdir, open, rename, rm, stat } from 'node:fs/promises'

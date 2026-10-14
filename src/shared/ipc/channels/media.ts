@@ -9,6 +9,7 @@ import {
   GenerateMosaicsRequestSchema,
   GrabFrameRequestSchema,
   ImageEditRequestSchema,
+  ImagePreviewRequestSchema,
   ImageRestoreRequestSchema,
   ImageRotateRequestSchema,
   MediaCancelTaskRequestSchema,
@@ -19,6 +20,7 @@ import {
   type FrameRef,
   type GenerateMosaicsResult,
   type ImageEditResult,
+  type ImagePreviewResult,
   type ImageRef,
   type ImageRestoreResult,
   type MediaInfo,
@@ -57,6 +59,8 @@ export const mediaInvoke = {
   /** Auto-detect black bars ("Strip Image"); the crop dialog's default selection. */
   'media:detectBlackBars': defineInvoke(DetectBlackBarsRequestSchema).returns<Rect>(),
   /** Crop/adjust an image in place after a `bkp/` copy; journaled as `write`. */
+  /** Converted preview for files `<img>` cannot draw. The original is never rewritten. */
+  'media:imagePreview': defineInvoke(ImagePreviewRequestSchema).returns<ImagePreviewResult>(),
   'media:imageEdit': defineInvoke(ImageEditRequestSchema).returns<ImageEditResult>(),
   /** End key (`ccw90`). Backup + journal like `media:imageEdit`. */
   'media:imageRotate': defineInvoke(ImageRotateRequestSchema).returns<ImageEditResult>(),

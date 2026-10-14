@@ -1,7 +1,7 @@
 /**
  * The only `keydown` listener of the app. Resolves the chord through `resolveBinding` (modal
  * scope first, else the active workspace, then `global`) and registers the `global` bindings:
- * F1 help and Ctrl+1..6 workspace switching.
+ * F1 help and Alt+1..6 workspace switching.
  */
 import { useEffect } from 'react'
 import { WORKSPACE_IDS } from '@shared/domain/keymap'
@@ -29,7 +29,7 @@ export default function KeymapHost() {
     ...WORKSPACE_IDS.map(
       (id, index): KeyBinding => ({
         id: `global.go.${id}`,
-        keys: [`Ctrl+${String(index + 1)}`],
+        keys: [`Alt+${String(index + 1)}`],
         description: `Go to ${WORKSPACE_LABELS[id]}`,
         allowInInput: true,
         run: () => void dispatch(workspaceActivated(id))

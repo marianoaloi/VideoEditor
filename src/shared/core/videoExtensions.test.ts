@@ -3,7 +3,7 @@ import { DEFAULT_VIDEO_EXTENSIONS, isVideoFileName, normaliseExtension } from '.
 
 describe('videoExtensions (TV-I accept)', () => {
   it('accepts video names case-insensitively', () => {
-    for (const name of ['a.MP4', 'a.mkv', 'x.3gp', '.clip.mp4', 'C:\r\a.MoV']) {
+    for (const name of ['a.MP4', 'a.mkv', 'x.3gp', '.clip.mp4', String.raw`C:\r\a.MoV`]) {
       expect(isVideoFileName(name), name).toBe(true)
     }
   })

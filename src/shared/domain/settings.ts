@@ -223,12 +223,15 @@ export function isPlainObject(value: unknown): value is Record<string, unknown> 
   return proto === Object.prototype || proto === null;
 }
 
+/** Maps whose keys the operator can delete: a patch replaces them instead of merging. */
+const REPLACE_KEYS: ReadonlySet<string> = new Set(['env']);
+
 function deepMerge(base: unknown, patch: unknown): unknown {
   if (!isPlainObject(base) || !isPlainObject(patch)) return patch === undefined ? base : patch;
   const result: Record<string, unknown> = { ...base };
   for (const [key, value] of Object.entries(patch)) {
     if (FORBIDDEN_KEYS.has(key) || value === undefined) continue;
-    result[key] = deepMerge(base[key], value);
+    result[key] = REPLACE_KEYS.has(key) ? value : deepMerge(base[key], value);
   }
   return result;
 }

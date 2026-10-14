@@ -36,7 +36,9 @@ export interface ImageTriageState extends TriageCoreState {
   /** The last accepted crop, for Ctrl+Shift+F ("apply to the next image"). */
   lastCrop: CropResult | null
   /** Auto-advance timer (key S). */
-  timer: { running: boolean; intervalMs: number }
+  timer: { running: boolean; intervalMs: number; action: '' | 'L' | 'R' }
+  /** Names and interval were copied from the settings once. */
+  seeded: boolean
 }
 
 const initialState: ImageTriageState = {
@@ -49,7 +51,8 @@ const initialState: ImageTriageState = {
   rightName: 'R',
   quickCrops: [],
   lastCrop: null,
-  timer: { running: false, intervalMs: 1000 }
+  timer: { running: false, intervalMs: 1000, action: '' },
+  seeded: false
 }
 
 const imageTriageSlice = createSlice({
@@ -67,8 +70,22 @@ const imageTriageSlice = createSlice({
       if (action.payload.left !== undefined) state.leftName = action.payload.left
       if (action.payload.right !== undefined) state.rightName = action.payload.right
     },
+    /** Deduplicated by label (same rectangle, same button). */
     quickCropAdded(state, action: PayloadAction<QuickCrop>) {
-      state.quickCrops.push(action.payload)
+      if (!state.quickCrops.some((q) => q.id === action.payload.id)) state.quickCrops.push(action.payload)
+    },
+    settingsSeeded(
+      state,
+      action: PayloadAction<{ left: string; right: string; intervalMs: number }>
+    ) {
+      if (state.seeded) return
+      state.seeded = true
+      state.leftName = action.payload.left
+      state.rightName = action.payload.right
+      state.timer.intervalMs = action.payload.intervalMs
+    },
+    recursiveSet(state, action: PayloadAction<boolean>) {
+      state.recursive = action.payload
     },
     quickCropRemoved(state, action: PayloadAction<string>) {
       state.quickCrops = state.quickCrops.filter((q) => q.id !== action.payload)
@@ -118,6 +135,8 @@ export const {
   noMoveSet,
   destinationNamesSet,
   quickCropAdded,
+  settingsSeeded,
+  recursiveSet,
   quickCropRemoved,
   lastCropSet,
   timerChanged

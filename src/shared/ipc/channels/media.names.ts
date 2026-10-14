@@ -11,6 +11,7 @@ export const MEDIA_INVOKE_CHANNELS = channelNames<keyof MediaInvoke & string>()(
   'media:generateMosaics',
   'media:cancelTask',
   'media:detectBlackBars',
+  'media:imagePreview',
   'media:imageEdit',
   'media:imageRotate',
   'media:imageRestoreBackup'

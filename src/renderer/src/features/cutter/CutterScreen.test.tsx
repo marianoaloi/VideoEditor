@@ -19,7 +19,7 @@ import { openCutterVideo } from './cutterSlice'
 const live = { positionMs: 0, paused: 0, seeks: [] as number[] }
 
 vi.mock('../../components/MediaPlayer/MediaPlayer', () => ({
-  default: (props: { ref?: Ref<MediaPlayerHandle> }) => {
+  default: function MockPlayer(props: { ref?: Ref<MediaPlayerHandle> }) {
     useImperativeHandle(props.ref, () => ({
       play: () => undefined,
       pause: () => {
@@ -194,7 +194,7 @@ describe('Cutter workspace', () => {
     mark(7000)
     mark(7000)
     expect(store.getState().cutter.draft.ranges).toEqual([])
-    expect(store.getState().notifications.items.at(-1)?.severity).toBe('warning')
+    expect(store.getState().notifications.queue.at(-1)?.severity).toBe('warning')
   })
 
   it('splits the span into N ranges (TV-2.7)', async () => {
@@ -273,10 +273,6 @@ describe('Cutter workspace', () => {
 
   it('shows the upload checkbox only when the hook is enabled (A6)', async () => {
     const { store } = setup()
-    store.dispatch({
-      type: 'settings/loaded-test',
-      payload: null
-    })
     await openVideo(store)
     mark(0)
     mark(1000)
@@ -338,7 +334,7 @@ describe('Cutter workspace', () => {
     await openVideo(store)
     press('cutter.externalPlayer')
     await waitFor(() =>
-      expect(store.getState().notifications.items.at(-1)?.message).toBe(
+      expect(store.getState().notifications.queue.at(-1)?.message).toBe(
         'External player hook is not configured'
       )
     )

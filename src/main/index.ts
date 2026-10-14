@@ -2,20 +2,28 @@ import { join } from 'node:path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { app, BrowserWindow, dialog, ipcMain, protocol, shell } from 'electron'
 import icon from '../../resources/icon.png?asset'
-import { registerAllIpc } from './ipc/registerAll'
+import { registerAllIpc, type RegisteredIpc } from './ipc/registerAll'
+import { registerMediaProtocol } from './services/media/protocol'
 
 const APP_USER_MODEL_ID = 'br.com.aloi.videoeditor'
 /** Matches `palette.background.default` in the renderer theme, so there is no white flash. */
 const WINDOW_BACKGROUND = '#121212'
 
 let mainWindow: BrowserWindow | null = null
+let ipc: RegisteredIpc | null = null
 
 // Custom scheme used by <video>/<img> to read local files (ADR-003/ADR-004).
 // It has to be registered before `app.ready`; the handler is attached after ready.
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'media',
-    privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true }
+    privileges: {
+      standard: true,
+      secure: true,
+      stream: true,
+      supportFetchAPI: true,
+      corsEnabled: true
+    }
   }
 ])
 
@@ -92,14 +100,14 @@ function onReady(): void {
   electronApp.setAppUserModelId(APP_USER_MODEL_ID)
   app.on('browser-window-created', (_event, window) => optimizer.watchWindowShortcuts(window))
 
-  // SWARM-WIRE(protocol): registerMediaProtocol(ipc.context) once svc-media provides it (wave 2)
-  registerAllIpc({
+  ipc = registerAllIpc({
     ipcMain,
     getWindow: () => mainWindow,
     trashItem: (path) => shell.trashItem(path),
     userDataDir: app.getPath('userData'),
     tempDir: app.getPath('temp')
   })
+  registerMediaProtocol(ipc.context)
 
   mainWindow = createMainWindow()
   app.on('activate', () => {
@@ -113,10 +121,15 @@ function bootstrap(): void {
     return
   }
   app.on('second-instance', focusExistingWindow)
+  // Kills running ffmpeg jobs and detaches the IPC handlers.
+  app.on('before-quit', () => ipc?.dispose())
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit()
   })
-  app.whenReady().then(onReady).catch((error: unknown) => reportFatal('Startup failed.', error))
+  app
+    .whenReady()
+    .then(onReady)
+    .catch((error: unknown) => reportFatal('Startup failed.', error))
 }
 
 bootstrap()

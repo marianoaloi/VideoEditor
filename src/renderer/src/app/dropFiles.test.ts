@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
+import type { Binding } from '@shared/domain/keymap'
 import { setBridge } from './api'
 import { collectDroppedPaths } from './dropFiles'
 import { bindingsFor, relevantConflicts } from './keymap/helpModel'
@@ -41,11 +42,11 @@ describe('collectDroppedPaths (ADR-003)', () => {
 })
 
 describe('F1 help model', () => {
-  const bindings = {
+  const bindings: Record<string, Binding> = {
     'global.help': { id: 'global.help', keys: ['F1'], description: 'Help', scope: 'global' },
     'jobs.a': { id: 'jobs.a', keys: ['F1', 'A'], description: 'Clash', scope: 'jobs' },
     'cutter.a': { id: 'cutter.a', keys: ['A'], description: 'Other', scope: 'cutter' }
-  } as const
+  }
 
   it('lists a scope sorted by id and warns only about the shown scopes', () => {
     expect(bindingsFor(bindings, 'jobs').map((b) => b.id)).toEqual(['jobs.a'])

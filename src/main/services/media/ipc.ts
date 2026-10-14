@@ -5,6 +5,7 @@ import { detectBlackBars } from './blackBars'
 import { createFrameService } from './frames'
 import { createImageEditService } from './imageEdit'
 import { createMosaicService } from './mosaic'
+import { createPreviewService } from './preview'
 import { createProbeService } from './probeService'
 import { createMediaTasks } from './tasks'
 
@@ -13,6 +14,7 @@ export function registerMediaIpc(ctx: MainContext): void {
   const frames = createFrameService({ ctx, probe: (file) => probes.probe(file) })
   const mosaics = createMosaicService({ ctx, probe: (file) => probes.probe(file) })
   const edits = createImageEditService(ctx)
+  const previews = createPreviewService(ctx)
   const tasks = createMediaTasks({
     probe: (file) => probes.probe(file),
     mosaic: (file, signal) => mosaics.get(file, signal === undefined ? {} : { signal }),
@@ -34,6 +36,7 @@ export function registerMediaIpc(ctx: MainContext): void {
       req.atMs
     )
   )
+  handle('media:imagePreview', (req) => previews.preview(req.path, req.force))
   handle('media:imageEdit', (req) => edits.edit(req))
   handle('media:imageRotate', (req) => edits.rotate(req))
   handle('media:imageRestoreBackup', (req) => edits.restore(req))
