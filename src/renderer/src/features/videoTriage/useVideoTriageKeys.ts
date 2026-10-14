@@ -9,6 +9,8 @@ import type { KeyBinding } from '../../app/keymap/types'
 import { CTRL_SPEEDS, SPEEDS } from '../../app/player/playerSlice'
 
 export interface TriageKeyActions {
+  /** `PageDown`: move this video to the custom folder and open it in the Cutter. */
+  sendToCutter(): void
   moveLeft(): void
   moveRight(): void
   skip(): void
@@ -81,13 +83,29 @@ export function buildTriageBindings(actions: TriageKeyActions): KeyBinding[] {
     bind('cut', ['C'], 'Cut job: move to CUSTOM with the ranges', actions.cut),
     bind('concat', ['V'], 'Concat job: move to CUSTOM, ranges joined', actions.concat),
     bind('wholeVideo', ['Ctrl+Shift+C'], 'Whole-video job to CUSTOM', actions.wholeVideo),
-    bind('convertWhole', ['Ctrl+Shift+X'], 'Convert first, whole video, to CUSTOM', actions.convertWholeVideo),
+    bind(
+      'convertWhole',
+      ['Ctrl+Shift+X'],
+      'Convert first, whole video, to CUSTOM',
+      actions.convertWholeVideo
+    ),
     bind('swapHandle', ['Z'], 'Swap the active handle', actions.swapHandle),
     bind('handlesStart', ['Ctrl+Home'], 'Low handle to the start', actions.handlesToStart),
     bind('handlesEnd', ['Ctrl+End'], 'High handle to the end', actions.handlesToEnd),
     bind('crop', ['Ctrl+Shift+S', 'Ctrl+Alt+X'], 'Crop dialog on the current frame', actions.crop),
     bind('openCutter', ['PageUp'], 'Open the previous video in the Cutter', actions.openInCutter),
-    bind('forceTranscode', ['6', 'Ctrl+Shift+F'], 'Play through the fallback transcoder', actions.toggleForceTranscode),
+    bind(
+      'sendToCutter',
+      ['PageDown'],
+      'Send this video to CUSTOM and open it in the Cutter',
+      actions.sendToCutter
+    ),
+    bind(
+      'forceTranscode',
+      ['6', 'Ctrl+Shift+F'],
+      'Play through the fallback transcoder',
+      actions.toggleForceTranscode
+    ),
     bind('externalPlayer', ['F8', 'Plus'], 'Open in the external player', actions.externalPlayer),
     bind('volumeDown', ['Minus'], 'Volume down', actions.volumeDown, { allowRepeat: true }),
     bind('volumeUp', ['0'], 'Volume up', actions.volumeUp, { allowRepeat: true }),

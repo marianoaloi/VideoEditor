@@ -2,7 +2,15 @@
  * Video Triage workspace (F2; video-triage.md). Wires the player, range slider, ranges list, info
  * bar and the key table to the slice and thunks. Decisions go through the shared triage thunks.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type MouseEvent
+} from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import LinearProgress from '@mui/material/LinearProgress'
@@ -62,6 +70,7 @@ import {
   executeCustomFolder,
   openExternalPlayer,
   openPreviousInCutter,
+  sendToCutter,
   saveTime,
   sendJob
 } from './videoTriageThunks'
@@ -180,7 +189,11 @@ export default function VideoTriageScreen() {
   }
   const seekBy = (key: Pick<SeekKey, 'nominalSec'>, mods: ModifierState, dir: 1 | -1): void => {
     const delta = seekDeltaMs(key.nominalSec, mods, dir)
-    const target = clampSeekTarget(playerRef.current?.getPositionMs() ?? player.positionMs, delta, maxMs)
+    const target = clampSeekTarget(
+      playerRef.current?.getPositionMs() ?? player.positionMs,
+      delta,
+      maxMs
+    )
     if (target !== null) seek(target)
   }
 
@@ -206,6 +219,10 @@ export default function VideoTriageScreen() {
     handlesToEnd: () => setHandles(jumpToEnd(handles, maxMs)),
     crop: () => void frames.startCrop(),
     openInCutter: () => void dispatch(openPreviousInCutter()),
+    sendToCutter: () => {
+      pause()
+      void dispatch(sendToCutter())
+    },
     toggleForceTranscode: () => dispatch(forceTranscodeToggled()),
     externalPlayer: () => {
       pause()
@@ -249,7 +266,8 @@ export default function VideoTriageScreen() {
   const onDrop = (event: DragEvent): void => {
     event.preventDefault()
     const dropped = collectDroppedPaths(event.dataTransfer)
-    const dir = dropped.folders[0] ?? (dropped.videos[0] === undefined ? null : dirname(dropped.videos[0]))
+    const dir =
+      dropped.folders[0] ?? (dropped.videos[0] === undefined ? null : dirname(dropped.videos[0]))
     if (dir === null) dispatch(notify('warning', 'Drop a folder or a video file'))
     else void openDir(dir)
   }
@@ -283,7 +301,8 @@ export default function VideoTriageScreen() {
       {
         label: 'Error move R',
         checked: settings.videoTriage.errorMoveR,
-        onClick: () => patchSettings({ videoTriage: { errorMoveR: !settings.videoTriage.errorMoveR } })
+        onClick: () =>
+          patchSettings({ videoTriage: { errorMoveR: !settings.videoTriage.errorMoveR } })
       },
       {
         label: 'Stay on top',
@@ -307,7 +326,10 @@ export default function VideoTriageScreen() {
         checked: settings.thumbs.enabled,
         onClick: () => patchSettings({ thumbs: { enabled: !settings.thumbs.enabled } })
       },
-      { label: 'Duplicates (MD5 analysis)', onClick: () => dispatch(workspaceActivated('duplicates')) }
+      {
+        label: 'Duplicates (MD5 analysis)',
+        onClick: () => dispatch(workspaceActivated('duplicates'))
+      }
     ]
     return { file, options, interfaces }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -331,6 +353,7 @@ export default function VideoTriageScreen() {
         forceTranscode={vt.forceTranscode}
         onForceTranscode={() => dispatch(forceTranscodeToggled())}
         onExecute={() => void dispatch(executeCustomFolder(settings.folders.custom))}
+        onSendToCutter={actions.sendToCutter}
         onFind={find}
         findError={findError}
       />
@@ -408,9 +431,15 @@ export default function VideoTriageScreen() {
               if (range !== undefined) setHandles(loadRangeIntoHandles(range))
             }}
             onChange={(index, range) => dispatch(rangeEdited({ index, range }))}
-            onModeChange={(mode) => dispatch({ type: 'videoTriage/draftPatched', payload: { posExecution: mode } })}
+            onModeChange={(mode) =>
+              dispatch({ type: 'videoTriage/draftPatched', payload: { posExecution: mode } })
+            }
             onSplit={(parts) => {
-              const result = splitRanges(Math.min(handles.low, handles.high), Math.max(handles.low, handles.high), parts)
+              const result = splitRanges(
+                Math.min(handles.low, handles.high),
+                Math.max(handles.low, handles.high),
+                parts
+              )
               if (result.ok) dispatch(rangesReplaced(result.ranges))
               else dispatch(notify('warning', result.message))
             }}
@@ -429,7 +458,13 @@ export default function VideoTriageScreen() {
           />
           <Typography
             variant="caption"
-            onWheel={(event) => setVolume(event.deltaY < 0 ? volumeUp(toPercent(player.volume)) : volumeDown(toPercent(player.volume)))}
+            onWheel={(event) =>
+              setVolume(
+                event.deltaY < 0
+                  ? volumeUp(toPercent(player.volume))
+                  : volumeDown(toPercent(player.volume))
+              )
+            }
           >
             Volume {toPercent(player.volume)}% · Speed {player.speed}x
           </Typography>
@@ -449,7 +484,11 @@ export default function VideoTriageScreen() {
           open
           mode="video"
           title={frames.crop.frame.sourcePath}
-          image={{ url: frames.crop.frame.url, width: frames.crop.frame.width, height: frames.crop.frame.height }}
+          image={{
+            url: frames.crop.frame.url,
+            width: frames.crop.frame.width,
+            height: frames.crop.frame.height
+          }}
           initial={frames.crop.initial}
           detectBars={frames.detectBars}
           onAccept={frames.acceptCrop}

@@ -108,14 +108,11 @@ export function useFrameDialogs(pause: () => void): FrameDialogs {
     dispatch(modalClosed('zoom'))
   }, [dispatch])
 
-  const detectBars = useCallback(
-    () => {
-      const frame = crop?.frame
-      if (frame === undefined) return Promise.reject(new Error('No frame is open'))
-      return call('media:detectBlackBars', { path: frame.sourcePath, atMs: frame.atMs })
-    },
-    [crop]
-  )
+  const detectBars = useCallback(() => {
+    const frame = crop?.frame
+    if (frame === undefined) return Promise.reject(new Error('No frame is open'))
+    return call('media:detectBlackBars', { path: frame.sourcePath, atMs: frame.atMs })
+  }, [crop])
 
   return { crop, zoom, startCrop, startZoom, acceptCrop, cancelCrop, closeZoom, detectBars }
 }

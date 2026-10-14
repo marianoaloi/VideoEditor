@@ -10,7 +10,12 @@
  */
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit'
 import { effectiveDuration } from '@shared/core/seekStep'
-import { initialHandles, applyPlayhead, type ActiveHandle, type Handles } from '@shared/core/jobDraft'
+import {
+  initialHandles,
+  applyPlayhead,
+  type ActiveHandle,
+  type Handles
+} from '@shared/core/jobDraft'
 import type { Range } from '@shared/domain/job'
 import type { ScanProgress, Session } from '@shared/domain/session'
 import type { SerializedError } from '../../app/api'

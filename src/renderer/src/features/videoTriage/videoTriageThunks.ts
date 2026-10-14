@@ -170,7 +170,8 @@ export const openPreviousInCutter = createAppAsyncThunk(
   async (_arg: void, { dispatch, getState }) => {
     const { videoTriage } = getState()
     const decision = peekDecision(videoTriage)
-    const item = decision === null ? undefined : videoTriage.items[indexOfItem(videoTriage, decision.itemId)]
+    const item =
+      decision === null ? undefined : videoTriage.items[indexOfItem(videoTriage, decision.itemId)]
     if (item === undefined) {
       dispatch(notify('info', 'No previous video to open in the Cutter'))
       return null
@@ -180,6 +181,33 @@ export const openPreviousInCutter = createAppAsyncThunk(
     await dispatch(openCutterVideo(item.path))
     if (positionMs > 0) dispatch(cutterDraftPatched({ low: positionMs }))
     return item.path
+  }
+)
+
+/**
+ * PageDown: move the CURRENT video to the custom folder (settings `folders.custom`, default
+ * CUSTOM) and open it in the Cutter at the playhead. It is a normal triage decision, so `B`
+ * undoes the move, and triage carries on with the next video. Resolves with the new path.
+ */
+export const sendToCutter = createAppAsyncThunk(
+  'videoTriage/sendToCutter',
+  async (_arg: void, { dispatch, getState }) => {
+    const state = getState()
+    const item = currentItem(state.videoTriage)
+    if (item === null || state.videoTriage.sessionId === null) return null
+    const positionMs = state.player.positionMs
+    dispatch(positionRemembered({ itemId: item.id, positionMs }))
+    const moved = await dispatch(videoTriageThunks.moveItem({ kind: 'custom' }))
+    if (typeof moved.payload !== 'string') return null
+    dispatch(workspaceActivated('cutter'))
+    await dispatch(
+      openCutterVideo({
+        path: moved.payload,
+        origin: 'triage',
+        seekMs: positionMs > 0 ? positionMs : undefined
+      })
+    )
+    return moved.payload
   }
 )
 
@@ -204,7 +232,10 @@ export const openExternalPlayer = createAppAsyncThunk(
     const item = currentItem(getState().videoTriage)
     if (item === null) return null
     try {
-      const started = await call('hooks:run', { name: 'externalPlayer', context: { file: item.path } })
+      const started = await call('hooks:run', {
+        name: 'externalPlayer',
+        context: { file: item.path }
+      })
       if (started.skipped) {
         dispatch(notify('info', 'Set up the "externalPlayer" hook in Settings to use F8'))
       }

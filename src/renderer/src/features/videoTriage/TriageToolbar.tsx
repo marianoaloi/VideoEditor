@@ -54,6 +54,8 @@ export interface TriageToolbarProps {
   forceTranscode: boolean
   onForceTranscode: () => void
   onExecute: () => void
+  /** PageDown: move this video to the custom folder and open it in the Cutter. */
+  onSendToCutter: () => void
   onFind: (text: string) => void
   findError: string | null
 }
@@ -96,6 +98,9 @@ export function TriageToolbar(props: TriageToolbarProps) {
       >
         Fallback player
       </ToggleButton>
+      <Button size="small" variant="outlined" onClick={props.onSendToCutter}>
+        To Cutter [PageDown]
+      </Button>
       <Button size="small" variant="outlined" onClick={props.onExecute}>
         Execute movie
       </Button>

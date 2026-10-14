@@ -151,6 +151,23 @@ test('SPEC 6.5: C with no ranges writes times=[[low,high]] and moves the video t
   expect(high).toBeGreaterThan(low)
 })
 
+test('PageDown moves the current video to CUSTOM and opens it in the Cutter (no job file written)', async () => {
+  const text = (await label().textContent()) ?? ''
+  const target = names.find((n) => !files('CUSTOM').includes(n) && text.includes(n))
+  expect(target, text).toBeDefined()
+  await expect
+    .poll(() => e2e.page.evaluate(() => document.querySelector('video')?.readyState ?? 0))
+    .toBeGreaterThanOrEqual(1)
+  await press('PageDown')
+  await expect.poll(() => files('CUSTOM'), { timeout: 15_000 }).toContain(target!)
+  expect(existsSync(join(dir, target!))).toBe(false) // moved, not copied
+  expect(existsSync(join(dir, 'CUSTOM', `${target}.json`))).toBe(false) // the Cutter writes it on save
+  await expect(
+    e2e.page.getByRole('navigation', { name: 'Workspaces' }).getByRole('button', { name: 'Cutter' })
+  ).toHaveAttribute('aria-current', 'page', { timeout: 15_000 })
+  await expect(e2e.page.locator('body')).toContainText(target!, { timeout: 15_000 })
+})
+
 test('no console errors during the Video Triage flow', () => {
   expect(e2e.consoleErrors).toEqual([])
 })

@@ -207,6 +207,37 @@ describe('Video Triage screen', () => {
     })
   })
 
+  it('PageDown moves the video to CUSTOM and opens that file in the Cutter, without writing a job', async () => {
+    const store = await mount()
+    press('videoTriage.sendToCutter')
+    await waitFor(() => expect(store.getState().cutter.videoPath).toBe('/in/CUSTOM/v0.mp4'))
+    const move = calls.find((c) => c.channel === 'fileops:move')
+    expect(move?.request).toMatchObject({ destination: { type: 'role', role: 'custom' } })
+    expect(channelsCalled()).not.toContain('jobs:saveJob')
+    expect(store.getState().keymap.activeWorkspace).toBe('cutter')
+    expect(store.getState().cutter.origin).toBe('triage')
+    // Triage carries on with the next video, and the move is an ordinary decision.
+    expect(store.getState().videoTriage.cursor).toBe(1)
+  })
+
+  it('PageDown is a normal decision: B moves the video back', async () => {
+    const store = await mount()
+    handlers['fileops:undo'] = () => ({
+      ok: true,
+      data: {
+        undone: entry('e', '/in/v0.mp4', '/in/CUSTOM/v0.mp4'),
+        compensating: entry('c', '/in/CUSTOM/v0.mp4', '/in/v0.mp4'),
+        restoredPath: '/in/v0.mp4',
+        item: null
+      }
+    })
+    press('videoTriage.sendToCutter')
+    await waitFor(() => expect(store.getState().cutter.videoPath).toBe('/in/CUSTOM/v0.mp4'))
+    press('videoTriage.undo')
+    await waitFor(() => expect(channelsCalled()).toContain('fileops:undo'))
+    await waitFor(() => expect(store.getState().videoTriage.cursor).toBe(0))
+  })
+
   it('M1: a failed job write undoes THIS move by entry id, not whatever was decided last', async () => {
     const store = await mount()
     act(() => {
@@ -219,7 +250,11 @@ describe('Video Triage screen', () => {
     }
     handlers['fileops:undo'] = () => ({
       ok: true,
-      data: { entry: entry('u1', '/in/CUSTOM/v0.mp4', '/in/v0.mp4'), restoredPath: '/in/v0.mp4', item: null }
+      data: {
+        entry: entry('u1', '/in/CUSTOM/v0.mp4', '/in/v0.mp4'),
+        restoredPath: '/in/v0.mp4',
+        item: null
+      }
     })
     press('videoTriage.cut')
     await waitFor(() => expect(channelsCalled()).toContain('fileops:undo'))
@@ -322,7 +357,24 @@ describe('Video Triage screen', () => {
     const mine = allHandlers().filter((b) => b.scope === 'videoTriage')
     const chords = mine.flatMap((b) => b.keys)
     expect(new Set(chords).size).toBe(chords.length)
-    for (const chord of ['A', 'F', 'D', 'B', 'Shift+Delete', 'P', 'X', 'C', 'V', 'Z', 'S', '6', 'Plus', 'F8', 'PageUp']) {
+    for (const chord of [
+      'A',
+      'F',
+      'D',
+      'B',
+      'Shift+Delete',
+      'P',
+      'X',
+      'C',
+      'V',
+      'Z',
+      'S',
+      '6',
+      'Plus',
+      'F8',
+      'PageUp',
+      'PageDown'
+    ]) {
       expect(chords, chord).toContain(chord)
     }
   })
