@@ -12,6 +12,9 @@ export default defineConfig({
   resolve: { alias },
   test: {
     globals: true,
+    // Real-ffmpeg and heavy jsdom tests exceed the 5 s default when the whole suite runs in parallel.
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],

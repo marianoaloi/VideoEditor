@@ -5,12 +5,14 @@ import type { IpcResult } from '@shared/domain/errors'
 import type { JournalEntry } from '@shared/domain/fileops'
 import type { MediaInfo } from '@shared/domain/media'
 import type { Session } from '@shared/domain/session'
+import { DEFAULT_SETTINGS } from '@shared/domain/settings'
 import type { InvokeChannel, RendererApi } from '@shared/ipc/contract'
 import { setBridge } from '../../app/api'
 import { findConflicts } from '../../app/keymap/conflicts'
 import { allHandlers, clearHandlers, resolveBinding } from '../../app/keymap/registry'
 import { panChanged } from '../../app/player/playerSlice'
 import { createAppStore } from '../../app/store'
+import { settingsReceived } from '../settings/settingsSlice'
 import VideoTriageScreen from './VideoTriageScreen'
 import { handlesSet, sessionOpened, videoTriageThunks } from './videoTriageSlice'
 
@@ -285,6 +287,71 @@ describe('Video Triage screen', () => {
     expect(JSON.stringify(store.getState().notifications)).toContain(
       'Loaded v0.mp4.json: 2 ranges, concat, crop, size 640x360, 800 kbit/s, convert first'
     )
+  })
+
+  describe('a video ffprobe cannot read', () => {
+    const PROBE_ERROR = {
+      ok: false as const,
+      error: {
+        code: 'PROBE_FAILED' as const,
+        message: 'Invalid data found when processing input',
+        details: { path: '/in/v0.mp4', exitCode: 1 }
+      }
+    }
+    const failOnFirst = (): void => {
+      const healthy = handlers['media:probe']!
+      handlers['media:probe'] = (r) =>
+        (r as { path: string }).path === '/in/v0.mp4' ? PROBE_ERROR : healthy(r)
+    }
+    const mountWithoutWaiting = (errorMoveR: boolean) => {
+      const store = createAppStore()
+      store.dispatch(
+        settingsReceived({ ...DEFAULT_SETTINGS, videoTriage: { analyse: true, errorMoveR } })
+      )
+      render(
+        <Provider store={store}>
+          <VideoTriageScreen />
+        </Provider>
+      )
+      act(() => {
+        store.dispatch(sessionOpened(session))
+      })
+      return store
+    }
+
+    it('with "Error move R" off: an error toast with the log, and the file stays', async () => {
+      failOnFirst()
+      const store = mountWithoutWaiting(false)
+      await waitFor(() => expect(store.getState().notifications.queue).toHaveLength(1))
+      const toast = store.getState().notifications.queue[0]!
+      expect(toast.severity).toBe('error')
+      expect(toast.message).toBe('Cannot read v0.mp4')
+      expect(toast.detail).toBe('Invalid data found when processing input')
+      expect(toast.autoHideMs).toBeNull()
+      expect(toast.log).toContain('File: /in/v0.mp4')
+      expect(toast.log).toContain('Error code: PROBE_FAILED')
+      expect(toast.log).toContain('"exitCode": 1')
+      expect(channelsCalled()).not.toContain('fileops:move')
+      // The same failure does not toast again on re-render.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      })
+      expect(store.getState().notifications.queue).toHaveLength(1)
+    })
+
+    it('with "Error move R" on: moved to R, ONE summary toast whose log lists the file', async () => {
+      failOnFirst()
+      const store = mountWithoutWaiting(true)
+      await waitFor(() => expect(channelsCalled()).toContain('fileops:move'))
+      expect(calls.find((c) => c.channel === 'fileops:move')?.request).toMatchObject({
+        destination: { type: 'role', role: 'right' }
+      })
+      await waitFor(() => expect(store.getState().notifications.queue).toHaveLength(1))
+      const toast = store.getState().notifications.queue[0]!
+      expect(toast.message).toBe('1 unreadable file moved to R')
+      expect(toast.log).toContain('File: /in/v0.mp4')
+      expect(toast.log).toContain('Invalid data found when processing input')
+    })
   })
 
   it('a video without a sidecar keeps the default cut mode and no notice', async () => {

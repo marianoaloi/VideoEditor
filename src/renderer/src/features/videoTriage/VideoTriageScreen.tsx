@@ -56,6 +56,7 @@ import {
   saveTime,
   sendJob
 } from './videoTriageThunks'
+import { useProbeFailures } from './useProbeFailures'
 import { findFirstMatch, itemLabel, upcomingItems } from './videoTriageHelpers'
 import {
   convertToggled,
@@ -85,12 +86,12 @@ export default function VideoTriageScreen() {
   const item = currentItem(vt)
   const entry = useAppSelector((s) => (item === null ? undefined : s.mediaInfo.byPath[item.path]))
   const info = entry?.status === 'ready' ? entry.info : null
-  const probeError = entry?.status === 'error' ? entry.error.message : null
+  const probeFailure = entry?.status === 'error' ? entry.error : null
+  const probeError = probeFailure === null ? null : probeFailure.message
   const analyse = settings.videoTriage.analyse
   const playerRef = useRef<MediaPlayerHandle>(null)
   const wheelAcc = useRef<WheelAccumulator>({ remainder: 0 })
   const restoreRef = useRef<{ low: number; high: number; active: 0 | 1 | -1 } | null>(null)
-  const unreadable = useRef(0)
   const firstLoad = useRef(true)
   const [findError, setFindError] = useState<string | null>(null)
   const durationMs = info?.durationMs ?? player.durationMs
@@ -127,16 +128,14 @@ export default function VideoTriageScreen() {
     if (analyse && next.length > 0) void dispatch(prefetchMedia(next))
   }, [dispatch, vt.items, vt.cursor, prefetchCount, analyse])
 
-  // "Error move R": unreadable files go straight to R, one summary toast (§2).
-  useEffect(() => {
-    if (itemPath !== null && probeError !== null && settings.videoTriage.errorMoveR) {
-      unreadable.current += 1
-      void dispatch(videoTriageThunks.moveItem({ kind: 'right' }))
-    } else if (unreadable.current > 0 && (info !== null || isEnd(vt))) {
-      dispatch(notify('info', `${unreadable.current} unreadable files moved to R`))
-      unreadable.current = 0
-    }
-  }, [dispatch, itemPath, probeError, info, vt, settings.videoTriage.errorMoveR])
+  // Unreadable videos: moved to R with one summary toast, or an error toast; both carry a log icon.
+  useProbeFailures({
+    itemPath,
+    failure: probeFailure,
+    ready: info !== null,
+    atEnd: isEnd(vt),
+    errorMoveR: settings.videoTriage.errorMoveR
+  })
 
   // ---- actions --------------------------------------------------------------------------
   const setHandles = (move: { handles: typeof handles; seekMs: number | null }): void => {
@@ -380,7 +379,7 @@ export default function VideoTriageScreen() {
                   dispatch(durationLoaded({ durationMs: ms }))
                 }}
                 onPlayingChange={(playing) => dispatch(playingChanged(playing))}
-                onError={(message) => dispatch(notify('error', message))}
+                onError={(message, log) => dispatch(notify('error', message, log === undefined ? {} : { log }))}
                 onWheel={onWheel}
                 zoom={zoom.zoom}
                 pan={zoom.pan}

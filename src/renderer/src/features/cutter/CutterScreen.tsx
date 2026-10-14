@@ -174,7 +174,7 @@ export default function CutterScreen() {
                 zoom={zoom.zoom}
                 pan={zoom.pan}
                 onPanChange={zoom.onPanChange}
-                onError={(message) => dispatch(notify('error', message))}
+                onError={(message, log) => dispatch(notify('error', message, log === undefined ? {} : { log }))}
               />
             </Box>
             <Box onWheel={(event) => wheelSeek(event.deltaY)}>

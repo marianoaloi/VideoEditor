@@ -14,6 +14,8 @@ export interface AppNotification {
   detail: string | null
   /** `null` = stays until dismissed (errors default to this). */
   autoHideMs: number | null
+  /** Plain-text log; when set the toast shows a log icon that opens it. */
+  log: string | null
 }
 
 export interface NotificationsState {
@@ -30,6 +32,8 @@ const DEFAULT_AUTO_HIDE: Readonly<Record<NotificationSeverity, number | null>> =
 
 export interface NotifyOptions {
   detail?: string
+  /** Text for the log dialog. A toast with a log stays until dismissed unless `autoHideMs` says otherwise. */
+  log?: string
   autoHideMs?: number | null
   id?: string
 }
@@ -54,8 +58,13 @@ const notificationsSlice = createSlice({
             severity,
             message,
             detail: options.detail ?? null,
+            log: options.log ?? null,
             autoHideMs:
-              options.autoHideMs === undefined ? DEFAULT_AUTO_HIDE[severity] : options.autoHideMs
+              options.autoHideMs !== undefined
+                ? options.autoHideMs
+                : options.log !== undefined
+                  ? null
+                  : DEFAULT_AUTO_HIDE[severity]
           } satisfies AppNotification
         }
       }

@@ -34,8 +34,11 @@ export interface MediaPlayerProps {
   onPlayingChange?: (playing: boolean) => void
   /** Called when the source switches (fallback or forced); `offsetMs` is the stream start. */
   onModeChange?: (mode: PlayerMode, offsetMs: number) => void
-  /** Decode failure that even the fallback could not recover. Shown by the screen. */
-  onError?: (message: string) => void
+  /**
+   * Decode failure that even the fallback could not recover. Shown by the screen. `log` is a
+   * multi-line text for the toast's log dialog (element error, mode, probe summary).
+   */
+  onError?: (message: string, log?: string) => void
   onEnded?: () => void
   /** Mouse wheel over the video: `deltaY` sign follows the DOM event. The screen decides what it does. */
   onWheel?: (event: WheelEvent) => void

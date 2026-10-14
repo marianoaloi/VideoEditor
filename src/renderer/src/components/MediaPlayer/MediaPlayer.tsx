@@ -13,6 +13,7 @@ import { checkPlayback } from '@shared/core/playability'
 import { NO_PAN, clampZoom, dragPan, formatZoom, zoomTransform } from '@shared/core/videoZoom'
 import { toMediaUrl, toTranscodeUrl } from '@shared/ipc/mediaUrl'
 import { planTranscodeSeek, toElementSec, toOriginalMs } from './timeline'
+import { describePlaybackFailure, playbackMessage } from './playbackLog'
 import type { MediaPlayerProps, PlayerMode } from './types'
 
 /** Position reports while playing, about 15 per second. */
@@ -36,11 +37,6 @@ function transcodeSource(path: string, offsetMs: number): Source {
 function bufferedEndSec(video: HTMLVideoElement): number {
   const ranges = video.buffered
   return ranges.length > 0 ? ranges.end(ranges.length - 1) : 0
-}
-
-function describeError(video: HTMLVideoElement | null): string {
-  const message = video?.error?.message
-  return message !== undefined && message !== '' ? message : 'The video could not be played'
 }
 
 const BADGE_STYLE = {
@@ -234,7 +230,17 @@ export function MediaPlayer(props: MediaPlayerProps) {
       setSource(transcodeSource(latest.current.path, at))
       return
     }
-    latest.current.onError?.(describeError(video))
+    latest.current.onError?.(
+      playbackMessage(video),
+      describePlaybackFailure({
+        path: latest.current.path,
+        info: latest.current.info,
+        video,
+        source: src,
+        fallbackTried: fallbackTriedRef.current,
+        forceTranscode: latest.current.forceTranscode ?? false
+      })
+    )
   }
 
   // ---- zoom: left-button drag pans (the screens' scrub handlers never see this drag) ---------

@@ -96,6 +96,45 @@ describe('MediaPlayer source choice (ADR-004)', () => {
     fireEvent.error(video(container))
     expect(onError).toHaveBeenCalledTimes(1)
   })
+
+  it('the error comes with a log: element error, mode, source and the probe summary', () => {
+    const onError = vi.fn()
+    const { container } = render(<MediaPlayer {...props({ onError })} />)
+    const el = video(container)
+    // The first error switches to the transcode stream, the second one is final.
+    Object.defineProperty(el, 'error', {
+      value: { code: 3, message: 'PIPELINE_ERROR_DECODE' },
+      configurable: true
+    })
+    fireEvent.error(el)
+    expect(onError).not.toHaveBeenCalled()
+    fireEvent.error(el)
+
+    expect(onError).toHaveBeenCalledTimes(1)
+    const [message, log] = onError.mock.calls[0] as [string, string]
+    expect(message).toBe('PIPELINE_ERROR_DECODE')
+    expect(log).toContain('Playback failed')
+    expect(log).toContain(`File: ${PATH}`)
+    expect(log).toContain('Player mode: transcode')
+    expect(log).toContain('Transcode fallback tried: yes, and it failed too')
+    expect(log).toContain('Element error: MEDIA_ERR_DECODE')
+    expect(log).toContain('Element message: PIPELINE_ERROR_DECODE')
+    expect(log).toContain('Video codec: h264')
+    expect(log).toContain('Size: 640x360')
+  })
+
+  it('the log still reads well without a probe result and without an element error', () => {
+    const onError = vi.fn()
+    const { container } = render(
+      <MediaPlayer {...props({ onError, info: null, forceTranscode: true })} />
+    )
+    fireEvent.error(video(container))
+    const [message, log] = onError.mock.calls[0] as [string, string]
+    expect(message).toBe('The video could not be played')
+    expect(log).toContain('Probe result: not available')
+    expect(log).toContain('Forced transcode: yes')
+    expect(log).not.toContain('Element error')
+  })
 })
 
 describe('MediaPlayer timeline and handle', () => {
@@ -130,7 +169,9 @@ describe('MediaPlayer timeline and handle', () => {
 
   it('applies speed and volume after metadata loads and reports the duration', () => {
     const onDuration = vi.fn()
-    const { container } = render(<MediaPlayer {...props({ speed: 2.5, volume: 0.3, onDuration })} />)
+    const { container } = render(
+      <MediaPlayer {...props({ speed: 2.5, volume: 0.3, onDuration })} />
+    )
     const el = video(container)
     fireEvent.loadedMetadata(el)
     expect(el.playbackRate).toBe(2.5)
