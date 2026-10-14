@@ -1,0 +1,11 @@
+out
+dist
+release
+coverage
+package-lock.json
+docs
+.swarm
+.claude
+.claude-flow
+.mcp.json
+CLAUDE.md

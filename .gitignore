@@ -1,0 +1,27 @@
+# Ruflo local secrets and runtime data
+.env
+.env.local
+.env.*.local
+.claude-flow/**
+.claude/**
+.swarm/**
+.claude-flow/data/
+.claude-flow/logs/
+.claude-flow/sessions/
+
+# Build, tooling and test output
+node_modules
+out
+dist
+release
+coverage
+*.log
+test-results
+playwright-report
+.eslintcache
+.vite
+ruvector.db
+agentdb.rvf.lock
+agentdb.rvf
+agentdb.rvf
+agentdb.rvf.lock
