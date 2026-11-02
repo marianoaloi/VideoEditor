@@ -3,6 +3,7 @@ import type { MediaInfo } from '@shared/domain/media'
 import {
   countJobs,
   formatCounter,
+  idsByStatus,
   infoColumns,
   joinPath,
   lastRunningLine,
@@ -79,5 +80,24 @@ describe('folders (ffmpeg-jobs §10.1)', () => {
         { status: 'running', logTail: ['a', 'frame=10', ' '] }
       ])
     ).toBe('frame=10')
+  })
+})
+
+describe('clearing processed jobs', () => {
+  const jobs = [
+    { id: 'a', status: 'done' as const },
+    { id: 'b', status: 'error' as const },
+    { id: 'c', status: 'cancelled' as const },
+    { id: 'd', status: 'running' as const },
+    { id: 'e', status: 'queued' as const }
+  ]
+  it('picks only the ids matching the given statuses', () => {
+    expect(idsByStatus(jobs, ['done'])).toEqual(['a'])
+    expect(idsByStatus(jobs, ['error'])).toEqual(['b'])
+    expect(idsByStatus(jobs, ['done', 'error', 'cancelled'])).toEqual(['a', 'b', 'c'])
+  })
+  it('skips active jobs even when "all" finished statuses are asked for', () => {
+    expect(idsByStatus(jobs, ['done', 'error', 'cancelled'])).not.toContain('d')
+    expect(idsByStatus(jobs, ['done', 'error', 'cancelled'])).not.toContain('e')
   })
 })

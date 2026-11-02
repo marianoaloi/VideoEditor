@@ -1,6 +1,7 @@
 /** Pure helpers of the Jobs workspace (research ffmpeg-jobs §10-§11): counter, table cells, paths. */
 import { basename, dirname } from '@shared/core/paths'
 import { formatMillis, formatSize } from '@shared/core/timeFormat'
+import type { JobStatus } from '@shared/domain/job'
 import type { MediaInfo } from '@shared/domain/media'
 import type { JobItem } from './jobsSlice'
 
@@ -86,4 +87,12 @@ export function lastRunningLine(jobs: readonly Pick<JobItem, 'status' | 'logTail
 /** Queued or running: the states a job can be cancelled in. */
 export function isActive(job: Pick<JobItem, 'status'>): boolean {
   return job.status === 'queued' || job.status === 'running'
+}
+
+/** Ids of the jobs whose status is one of `statuses` (e.g. clearing "done" or "error" from the queue). */
+export function idsByStatus(
+  jobs: readonly Pick<JobItem, 'id' | 'status'>[],
+  statuses: readonly JobStatus[]
+): string[] {
+  return jobs.filter((job) => statuses.includes(job.status)).map((job) => job.id)
 }

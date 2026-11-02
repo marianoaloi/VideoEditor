@@ -19,11 +19,12 @@ import { DEFAULT_SETTINGS } from '@shared/domain/settings'
 import ConfirmDialog from '../settings/ConfirmDialog'
 import DropTable from './DropTable'
 import { cleanAndExecuteMovie, runFolder } from './jobsActions'
-import { countJobs, formatCounter, isActive, joinPath, lastRunningLine } from './jobsLogic'
+import { countJobs, formatCounter, idsByStatus, isActive, joinPath, lastRunningLine } from './jobsLogic'
 import {
   clearQueue,
   jobSelected,
   jobsDirChosen,
+  jobsRemoved,
   loadJobs,
   optionsChanged,
   cancelJob,
@@ -65,6 +66,9 @@ export default function JobsScreen() {
   const jobs = order.map((id) => byId[id]).filter((job): job is JobItem => job !== undefined)
   const counter = formatCounter(countJobs(jobs))
   const ffLine = lastRunningLine(jobs)
+  const doneIds = idsByStatus(jobs, ['done'])
+  const failedIds = idsByStatus(jobs, ['error'])
+  const processedIds = idsByStatus(jobs, ['done', 'error', 'cancelled'])
 
   const withDirectory = (title: string, use: (dir: string) => void): void => {
     pickDirectory(title)
@@ -153,6 +157,15 @@ export default function JobsScreen() {
           disabled={!jobs.some(isActive)}
         >
           Cancel all
+        </Button>
+        <Button onClick={() => dispatch(jobsRemoved(doneIds))} disabled={doneIds.length === 0}>
+          Clear done
+        </Button>
+        <Button onClick={() => dispatch(jobsRemoved(failedIds))} disabled={failedIds.length === 0}>
+          Clear failed
+        </Button>
+        <Button onClick={() => dispatch(jobsRemoved(processedIds))} disabled={processedIds.length === 0}>
+          Clear all processed
         </Button>
       </Stack>
       <Stack direction="row" useFlexGap sx={{ flexWrap: 'wrap', columnGap: 2 }} role="group" aria-label="Job options">
