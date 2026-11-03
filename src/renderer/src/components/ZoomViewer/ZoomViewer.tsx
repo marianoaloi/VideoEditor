@@ -103,7 +103,7 @@ export default function ZoomViewer({ open, imageUrl, width, height, title, onClo
   }
 
   return (
-    <Dialog open={open} onClose={(_, reason) => reason !== 'escapeKeyDown' && onClose()} fullScreen aria-labelledby="zoom-dialog-title">
+    <Dialog open={open} onClose={onClose} fullScreen aria-labelledby="zoom-dialog-title">
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', bgcolor: 'background.default' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', px: 2, py: 0.5, gap: 1 }}>
           <Typography id="zoom-dialog-title" variant="subtitle1" noWrap sx={{ flex: 1 }}>

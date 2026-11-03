@@ -55,6 +55,12 @@ describe('ZoomViewer (cutter checklist 43-45)', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
+  it('the Escape key reports onClose', () => {
+    const { onClose } = setup()
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
   it('has brightness, contrast and rotation sliders', () => {
     setup()
     for (const name of [/Brightness/, /Contrast/, /Rotation/]) {
