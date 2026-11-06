@@ -2,7 +2,7 @@
  * Batch scan, orphan/empty/invalid JSON, post-job hooks and delete rules (checklist 24-34 subset),
  * plus a real-ffmpeg batch of 2 JSON files (B12).
  */
-import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { serializeVideoJob, createVideoJob } from '@shared/core/videoJob'
@@ -202,6 +202,32 @@ describe('post-job rules (checklist 27-34)', () => {
     expect((await readdir(custom)).some((n) => n.endsWith('.log'))).toBe(false)
   })
 
+  it('a single-range job + deleteOriginal renames its lone output back to the original name', async () => {
+    const kit = makeKit(dir)
+    const video = await addJob('one.mp4')
+    const service = fakeService(kit)
+    await service.enqueueFiles({ paths: [video], options: parsedOptions({ deleteOriginal: true }), force: false })
+    await service.queue.idle()
+    const names = await readdir(custom)
+    expect(names).toContain('one.mp4')
+    expect(names).not.toContain('one.mp4.0.mp4')
+    expect((await stat(video)).size).toBe(5000)
+  })
+
+  it('a video with no JSON (force) + deleteOriginal renames the output back to the original name', async () => {
+    const kit = makeKit(dir)
+    await writeFile(path.join(custom, 'raw.mp4'), 'video')
+    const service = fakeService(kit)
+    outputMs = INFO.durationMs // the force job's whole-video span matches the source duration
+    await service.enqueueFolder({ dir: custom, options: parsedOptions({ deleteOriginal: true }), force: true })
+    await service.queue.idle()
+    outputMs = 1000
+    const names = await readdir(custom)
+    expect(names).toContain('raw.mp4')
+    expect(names).not.toContain('raw.mp4.0.mp4')
+    expect((await stat(path.join(custom, 'raw.mp4'))).size).toBe(5000)
+  })
+
   it('without deleteOriginal nothing is trashed; a disabled hook is skipped', async () => {
     const kit = makeKit(dir)
     const video = await addJob('n.mp4')
@@ -355,11 +381,13 @@ describe.skipIf(tools === null)('real ffmpeg batch', () => {
     await service.queue.idle()
     const done = kit.events.filter((e) => e.type === 'done')
     expect(done).toHaveLength(2)
+    // Each job produces a single output (one range; concat's two ranges merge into one file), so
+    // deleteOriginal renames it back to the original's name once the source is trashed.
     const names = (await readdir(custom)).sort()
-    expect(names).toContain('a.mp4.0.mp4')
-    expect(names).toContain('b.mp4.mp4')
-    expect(names).not.toContain('b.mp4.0.mp4')
-    expect(names).not.toContain('a.mp4')
+    expect(names).toContain('a.mp4')
+    expect(names).toContain('b.mp4')
+    expect(names).not.toContain('a.mp4.0.mp4')
+    expect(names).not.toContain('b.mp4.mp4')
     expect(kit.trashed).toContain(a)
     expect(kit.trashed).toContain(b)
   })

@@ -14,6 +14,7 @@ import path from 'node:path'
 import { resolveRanges } from '@shared/core/ffmpegArgs'
 import type { CommandTemplate, HookContext, HookExit, HookName } from '@shared/domain/hooks'
 import type { HookService } from '../../ipc/context'
+import { isAlreadyExists, moveExclusive } from '../ffmpeg/exclusiveMove'
 import { md5OfFile } from '../hashing/build'
 import { exists } from './jobFiles'
 import type { JobPayload } from './jobExecutor'
@@ -133,6 +134,31 @@ async function trashOriginal(deps: PostDeps, payload: JobPayload, log: (line: st
   }
 }
 
+/**
+ * A single output (a whole-video force job with no JSON, or a JSON job with one range/no concat)
+ * takes the original's name once the source is gone, instead of keeping its `.0.mp4` / `.mp4.mp4`
+ * working name.
+ */
+async function renameToOriginal(
+  payload: JobPayload,
+  outputs: readonly string[],
+  log: (line: string) => void
+): Promise<void> {
+  const [output, ...rest] = outputs
+  if (output === undefined || rest.length > 0 || output === payload.videoPath) return
+  try {
+    await moveExclusive(output, payload.videoPath)
+    log(`Renamed ${output} to ${payload.videoPath}`)
+  } catch (error) {
+    const why = isAlreadyExists(error)
+      ? 'a file with that name already exists'
+      : error instanceof Error
+        ? error.message
+        : String(error)
+    log(`Could not rename the output to ${payload.videoPath}: ${why}`)
+  }
+}
+
 /** The queue's `afterDone` step. */
 export async function postJob(
   deps: PostDeps,
@@ -158,6 +184,7 @@ export async function postJob(
     return
   }
   await trashOriginal(deps, payload, log)
+  await renameToOriginal(payload, outputs, log)
 }
 
 /** `uploadAll`: one call with every output of the batch's successful jobs that asked for it. */
