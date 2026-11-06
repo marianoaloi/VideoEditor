@@ -160,12 +160,17 @@ describe('Video Triage screen', () => {
     expect([draft.low, draft.high, activeHandle]).toEqual([0, 59_900, 0])
   })
 
-  it('H hides and shows the info bar, for a full preview without the media information', async () => {
+  it('H hides the title, the toolbar and the info bar for a full preview, keeping the item label', async () => {
     await mount()
+    expect(screen.getByRole('heading', { name: 'Video Triage' })).toBeInTheDocument()
     expect(screen.getByTestId('info-fileSize')).toBeInTheDocument()
+    expect(screen.getByTestId('item-label')).toBeInTheDocument()
     press('videoTriage.toggleInfo')
+    expect(screen.queryByRole('heading', { name: 'Video Triage' })).not.toBeInTheDocument()
     expect(screen.queryByTestId('info-fileSize')).not.toBeInTheDocument()
+    expect(screen.getByTestId('item-label')).toBeInTheDocument()
     press('videoTriage.toggleInfo')
+    expect(screen.getByRole('heading', { name: 'Video Triage' })).toBeInTheDocument()
     expect(screen.getByTestId('info-fileSize')).toBeInTheDocument()
   })
 

@@ -336,19 +336,23 @@ export default function VideoTriageScreen() {
       onDragOver={(event) => event.preventDefault()}
       onDrop={onDrop}
     >
-      <Typography variant="h6" component="h1">
-        Video Triage
-      </Typography>
-      <TriageToolbar
-        {...entries}
-        convert={vt.draft.convert}
-        onConvert={(value) => dispatch(convertToggled(value))}
-        forceTranscode={vt.forceTranscode}
-        onForceTranscode={() => dispatch(forceTranscodeToggled())}
-        onExecute={() => void dispatch(executeCustomFolder(settings.folders.custom))}
-        onFind={find}
-        findError={findError}
-      />
+      {vt.flags.infoVisible && (
+        <>
+          <Typography variant="h6" component="h1">
+            Video Triage
+          </Typography>
+          <TriageToolbar
+            {...entries}
+            convert={vt.draft.convert}
+            onConvert={(value) => dispatch(convertToggled(value))}
+            forceTranscode={vt.forceTranscode}
+            onForceTranscode={() => dispatch(forceTranscodeToggled())}
+            onExecute={() => void dispatch(executeCustomFolder(settings.folders.custom))}
+            onFind={find}
+            findError={findError}
+          />
+        </>
+      )}
       {vt.status === 'opening' && <LinearProgress aria-label="Scanning" />}
       {vt.status === 'idle' && (
         <Button variant="contained" onClick={() => void openFolder()}>
@@ -364,7 +368,7 @@ export default function VideoTriageScreen() {
           <Box
             data-testid="player-area"
             onMouseMove={onScrub}
-            sx={{ height: vt.flags.infoVisible ? '45vh' : '65vh', minHeight: 200, bgcolor: '#000' }}
+            sx={{ height: vt.flags.infoVisible ? '45vh' : '75vh', minHeight: 200, bgcolor: '#000' }}
           >
             {analyse ? (
               <MediaPlayer
