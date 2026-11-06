@@ -160,6 +160,15 @@ describe('Video Triage screen', () => {
     expect([draft.low, draft.high, activeHandle]).toEqual([0, 59_900, 0])
   })
 
+  it('H hides and shows the info bar, for a full preview without the media information', async () => {
+    await mount()
+    expect(screen.getByTestId('info-fileSize')).toBeInTheDocument()
+    press('videoTriage.toggleInfo')
+    expect(screen.queryByTestId('info-fileSize')).not.toBeInTheDocument()
+    press('videoTriage.toggleInfo')
+    expect(screen.getByTestId('info-fileSize')).toBeInTheDocument()
+  })
+
   it('A / F move to L / R and advance; B undoes the latest decision (checklist 36)', async () => {
     const store = await mount()
     handlers['fileops:undo'] = () => ({

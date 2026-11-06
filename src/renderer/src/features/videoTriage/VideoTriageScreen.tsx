@@ -224,7 +224,8 @@ export default function VideoTriageScreen() {
     },
     zoomIn: zoom.zoomIn,
     zoomOut: zoom.zoomOut,
-    zoomReset: zoom.zoomReset
+    zoomReset: zoom.zoomReset,
+    toggleInfo: () => dispatch(flagsChanged({ infoVisible: !vt.flags.infoVisible }))
   }
   useVideoTriageKeys(actions)
 
@@ -305,6 +306,11 @@ export default function VideoTriageScreen() {
         checked: vt.flags.scrubOnHover,
         onClick: () => dispatch(flagsChanged({ scrubOnHover: !vt.flags.scrubOnHover }))
       },
+      {
+        label: 'Show media information',
+        checked: vt.flags.infoVisible,
+        onClick: () => dispatch(flagsChanged({ infoVisible: !vt.flags.infoVisible }))
+      },
       { label: 'Zoom', onClick: () => void frames.startZoom(), disabled: item === null }
     ]
     const interfaces: MenuEntry[] = [
@@ -358,7 +364,7 @@ export default function VideoTriageScreen() {
           <Box
             data-testid="player-area"
             onMouseMove={onScrub}
-            sx={{ height: '45vh', minHeight: 200, bgcolor: '#000' }}
+            sx={{ height: vt.flags.infoVisible ? '45vh' : '65vh', minHeight: 200, bgcolor: '#000' }}
           >
             {analyse ? (
               <MediaPlayer
@@ -434,17 +440,19 @@ export default function VideoTriageScreen() {
             }}
             thresholds={settings.thresholds.selection}
           />
-          <InfoBar
-            key={item.id}
-            info={analyse ? info : null}
-            fileSizeBytes={item.sizeBytes}
-            positionMs={player.positionMs}
-            selectedMs={selectionMs(handles)}
-            thresholds={settings.thresholds}
-            overrides={vt.draft.overrides}
-            onOverridesChange={(patch) => dispatch(overridesPatched(patch))}
-            error={probeError}
-          />
+          {vt.flags.infoVisible && (
+            <InfoBar
+              key={item.id}
+              info={analyse ? info : null}
+              fileSizeBytes={item.sizeBytes}
+              positionMs={player.positionMs}
+              selectedMs={selectionMs(handles)}
+              thresholds={settings.thresholds}
+              overrides={vt.draft.overrides}
+              onOverridesChange={(patch) => dispatch(overridesPatched(patch))}
+              error={probeError}
+            />
+          )}
           <Typography
             variant="caption"
             onWheel={(event) =>

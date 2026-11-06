@@ -33,6 +33,8 @@ export interface VideoTriageFlags {
   recursive: boolean
   /** "Scrub on hover": mouse position over the player seeks. */
   scrubOnHover: boolean
+  /** `H`: show the info bar (off gives a full preview with no media information). */
+  infoVisible: boolean
 }
 
 export interface VideoTriageState extends TriageCoreState {
@@ -60,7 +62,7 @@ const initialState: VideoTriageState = {
   status: 'idle',
   error: null,
   scan: null,
-  flags: { recursive: false, scrubOnHover: false },
+  flags: { recursive: false, scrubOnHover: false, infoVisible: true },
   draft: createJobDraft(),
   activeHandle: 0,
   handlesReady: false,
