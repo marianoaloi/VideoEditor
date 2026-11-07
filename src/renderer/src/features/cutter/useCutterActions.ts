@@ -11,12 +11,13 @@ import {
   type EditorState
 } from '@shared/core/rangeEditor'
 import { splitRanges } from '@shared/core/splitRanges'
+import { fromPercent, toPercent, volumeDown, volumeUp } from '@shared/core/volume'
 import { call } from '../../app/api'
 import { useAppDispatch, useAppStore } from '../../app/hooks'
 import { notify } from '../../app/notifications/notify'
 import { positionChanged, volumeSet } from '../../app/player/playerSlice'
 import type { MediaPlayerHandle } from '../../components/MediaPlayer/types'
-import { volumeDownPercent, volumeUpPercent, VOLUME_END_KEY_PERCENT } from './cutterMath'
+import { VOLUME_END_KEY_PERCENT } from './cutterMath'
 import {
   cutterClosed,
   editorApplied,
@@ -83,8 +84,8 @@ export function useCutterActions(playerRef: RefObject<MediaPlayerHandle | null>)
       return true
     }
     const editor = () => toEditor(state().cutter.draft)
-    const percent = () => Math.round(state().player.volume * 100)
-    const setPercent = (value: number) => dispatch(volumeSet(value / 100))
+    const percent = () => toPercent(state().player.volume)
+    const setPercent = (value: number) => dispatch(volumeSet(fromPercent(value)))
 
     const save = async () => {
       if (state().cutter.videoPath === null) return
@@ -93,7 +94,7 @@ export function useCutterActions(playerRef: RefObject<MediaPlayerHandle | null>)
     }
 
     const open = (arg: string | OpenCutterArg) => {
-      setPercent(Math.round((state().settings.value?.player.volume ?? 0.5) * 100))
+      setPercent(toPercent(state().settings.value?.player.volume ?? 0.5))
       void dispatch(openCutterVideo(arg))
     }
 
@@ -170,7 +171,7 @@ export function useCutterActions(playerRef: RefObject<MediaPlayerHandle | null>)
         }
       },
       volumeBy: (direction) => {
-        setPercent(direction === 1 ? volumeUpPercent(percent()) : volumeDownPercent(percent()))
+        setPercent(direction === 1 ? volumeUp(percent()) : volumeDown(percent()))
       },
       volumeEndKey: () => setPercent(VOLUME_END_KEY_PERCENT),
       externalPlayer: async () => {

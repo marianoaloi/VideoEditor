@@ -1,7 +1,6 @@
 /**
- * Pure helpers of the Cutter workspace (MyVideos key table, volume rule, wheel steps, scrub
- * formula, dropped files; research cutter-crop-zoom §1.5, TV-3). Volume here is the Cutter's own
- * rule (0..100, step 10 from 10 up, else 1) and differs from Video Triage's floor of 1.
+ * Pure helpers of the Cutter workspace (MyVideos key table, wheel steps, scrub formula, dropped
+ * files; research cutter-crop-zoom §1.5, TV-3). Volume shares Video Triage's rule (`@shared/core/volume`).
  */
 import { mediaKindOf } from '@shared/core/mediaKind'
 import { basename } from '@shared/core/paths'
@@ -31,20 +30,6 @@ export const SEEK_KEY_SPECS: readonly SeekKeySpec[] = [
 ]
 
 export const VOLUME_END_KEY_PERCENT = 10
-
-const clampPercent = (value: number): number => Math.min(100, Math.max(0, Math.round(value)))
-
-/** Up: `+10` from 10 up, else `+1` (5 gives 6 7 8 9 10 20 30). */
-export function volumeUpPercent(percent: number): number {
-  const v = clampPercent(percent)
-  return clampPercent(v + (v >= 10 ? 10 : 1))
-}
-
-/** Down: `-10` from 10 up, else `-1` (100 gives 90 ... 10 0; 14 gives 4 3 2). */
-export function volumeDownPercent(percent: number): number {
-  const v = clampPercent(percent)
-  return clampPercent(v - (v >= 10 ? 10 : 1))
-}
 
 export const WHEEL_NOTCH = 100
 

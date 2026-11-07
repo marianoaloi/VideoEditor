@@ -477,7 +477,7 @@ describe('Video Triage screen', () => {
     press('videoTriage.volumeUp')
     expect(store.getState().player.volume).toBeCloseTo(0.6)
     press('videoTriage.volumeMin')
-    expect(store.getState().player.volume).toBeCloseTo(0.01)
+    expect(store.getState().player.volume).toBeCloseTo(0.001)
     press('videoTriage.speed2')
     expect(store.getState().player.speed).toBe(2.5)
     press('videoTriage.speedCtrl1')

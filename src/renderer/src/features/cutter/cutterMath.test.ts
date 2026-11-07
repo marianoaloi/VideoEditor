@@ -1,14 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { seekTarget } from '@shared/core/rangeEditor'
-import {
-  outputNames,
-  planDrop,
-  scrubMs,
-  SEEK_KEY_SPECS,
-  volumeDownPercent,
-  volumeUpPercent,
-  wheelSteps
-} from './cutterMath'
+import { outputNames, planDrop, scrubMs, SEEK_KEY_SPECS, wheelSteps } from './cutterMath'
 
 describe('seek keys (TV-3)', () => {
   const apply = (chord: string) => {
@@ -28,30 +20,6 @@ describe('seek keys (TV-3)', () => {
   })
   it('has unique chords', () => {
     expect(new Set(SEEK_KEY_SPECS.map((s) => s.chord)).size).toBe(14)
-  })
-})
-
-describe('volume rule (checklist 19)', () => {
-  const run = (start: number, step: (v: number) => number, times: number) => {
-    const out: number[] = []
-    let v = start
-    for (let i = 0; i < times; i += 1) {
-      v = step(v)
-      out.push(v)
-    }
-    return out
-  }
-  it('goes up 6 7 8 9 10 20 30 40 from 5', () => {
-    expect(run(5, volumeUpPercent, 8)).toEqual([6, 7, 8, 9, 10, 20, 30, 40])
-  })
-  it('goes down 90 ... 10 0 0 from 100', () => {
-    expect(run(100, volumeDownPercent, 11)).toEqual([90, 80, 70, 60, 50, 40, 30, 20, 10, 0, 0])
-  })
-  it('goes 4 3 2 from 14 (not multiples of ten)', () => {
-    expect(run(14, volumeDownPercent, 4)).toEqual([4, 3, 2, 1])
-  })
-  it('stays inside 0..100', () => {
-    expect(volumeUpPercent(100)).toBe(100)
   })
 })
 

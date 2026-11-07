@@ -3,6 +3,7 @@ import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import { fromMsToEnd, pendingLengthMs, totalSelectedMs } from '@shared/core/rangeEditor'
 import { basename } from '@shared/core/paths'
+import { toPercent } from '@shared/core/volume'
 import { ProcessingMode, type Range } from '@shared/domain/job'
 import { pathForFile } from '../../app/api'
 import { useAppDispatch, useAppSelector } from '../../app/hooks'
@@ -130,7 +131,7 @@ export default function CutterScreen() {
     if (next.steps !== 0) actions.seekBy(next.steps * WHEEL_SEEK_MS)
   }
 
-  const volumePercent = Math.round(player.volume * 100)
+  const volumePercent = toPercent(player.volume)
   const selectedMs = totalSelectedMs(draft.ranges, duration)
   const editor = { ranges: draft.ranges, pendingStartMs: draft.pendingStartMs }
 
