@@ -5,7 +5,7 @@
     "name": "Mariano Aloi",
     "email": "mariano@aloi.com.br"
   },
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Keyboard-first media triage, cutter and duplicate finder (Electron + React + Redux Toolkit + TypeScript)",
   "private": true,
   "license": "ISC",
